@@ -65,6 +65,8 @@ private:
     MarkdownCommands markdown_commands_ = MarkdownCommands::defaults();
     CustomDictionarySettings custom_dictionary_;
     RecognitionSettings recognition_settings_;
+    CleanupSettings cleanup_settings_;
+    HotkeySettings hotkey_settings_;
 
     WindowsAudioCapture audio_capture_;
     ApplicationCore core_;

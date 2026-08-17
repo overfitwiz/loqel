@@ -1,5 +1,6 @@
 #include "ApplicationCore.h"
 
+#include <cctype>
 #include <iterator>
 #include <utility>
 #include <vector>
@@ -19,6 +20,147 @@ void append_utterance(
     }
 
     committed += text;
+}
+
+bool is_word_byte(unsigned char character) {
+    return character >= 0x80 || std::isalnum(character) || character == '_';
+}
+
+bool is_space_byte(unsigned char character) {
+    return character < 0x80 && std::isspace(character);
+}
+
+bool is_punctuation(char character) {
+    return
+        character == '.' || character == ',' || character == ';' ||
+        character == ':' || character == '!' || character == '?';
+}
+
+char ascii_lower(char character) {
+    const auto byte = static_cast<unsigned char>(character);
+    return byte < 0x80
+        ? static_cast<char>(std::tolower(byte))
+        : character;
+}
+
+bool matches_cleanup_phrase(
+    const std::string& text,
+    std::size_t position,
+    const std::string& phrase
+) {
+    if (phrase.empty() || position + phrase.size() > text.size()) {
+        return false;
+    }
+
+    if (
+        position > 0 &&
+        is_word_byte(static_cast<unsigned char>(text[position - 1]))
+    ) {
+        return false;
+    }
+
+    const std::size_t end = position + phrase.size();
+    if (
+        end < text.size() &&
+        is_word_byte(static_cast<unsigned char>(text[end]))
+    ) {
+        return false;
+    }
+
+    for (std::size_t i = 0; i < phrase.size(); ++i) {
+        if (ascii_lower(text[position + i]) != ascii_lower(phrase[i])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+std::string remove_cleanup_words(
+    const std::string& text,
+    const CleanupSettings& cleanup
+) {
+    std::string filtered;
+    filtered.reserve(text.size());
+
+    std::size_t position = 0;
+    while (position < text.size()) {
+        const std::string* match = nullptr;
+
+        for (const std::string& phrase : cleanup.remove_words) {
+            if (
+                matches_cleanup_phrase(text, position, phrase) &&
+                (!match || phrase.size() > match->size())
+            ) {
+                match = &phrase;
+            }
+        }
+
+        if (!match) {
+            filtered.push_back(text[position++]);
+            continue;
+        }
+
+        position += match->size();
+
+        // Avoid leaving doubled punctuation around a removed filler, while
+        // retaining sentence punctuation when the filler ended a sentence.
+        if (position < text.size() && is_punctuation(text[position])) {
+            while (!filtered.empty() && is_space_byte(filtered.back())) {
+                filtered.pop_back();
+            }
+
+            if (filtered.empty()) {
+                while (position < text.size() && is_punctuation(text[position])) {
+                    ++position;
+                }
+            }
+            else {
+                while (!filtered.empty() && is_punctuation(filtered.back())) {
+                    filtered.pop_back();
+                }
+            }
+        }
+    }
+
+    std::string result;
+    result.reserve(filtered.size());
+    bool pending_space = false;
+
+    for (char character : filtered) {
+        if (is_space_byte(static_cast<unsigned char>(character))) {
+            pending_space = true;
+            continue;
+        }
+
+        if (
+            pending_space && !result.empty() &&
+            !is_punctuation(character)
+        ) {
+            result.push_back(' ');
+        }
+
+        result.push_back(character);
+        pending_space = false;
+    }
+
+    return result;
+}
+
+std::string prepare_output(
+    const std::string& transcript,
+    OutputMode output_mode,
+    const CleanupSettings& cleanup,
+    const MarkdownCommands& commands
+) {
+    if (output_mode == OutputMode::Plain) {
+        return transcript;
+    }
+
+    return MarkdownFormatter::format(
+        remove_cleanup_words(transcript, cleanup),
+        commands
+    );
 }
 
 }
@@ -49,11 +191,13 @@ bool ApplicationCore::initialize(
 void ApplicationCore::set_settings(
     const MarkdownCommands& commands,
     const CustomDictionarySettings& dictionary,
-    const RecognitionSettings& recognition
+    const RecognitionSettings& recognition,
+    const CleanupSettings& cleanup
 ) {
     markdown_commands_ = commands;
     custom_dictionary_ = dictionary;
     recognition_settings_ = recognition;
+    cleanup_settings_ = cleanup;
 
     const int right_context = rnnt_right_context(recognition.latency);
     if (
@@ -78,7 +222,7 @@ void ApplicationCore::set_settings(
     }
 }
 
-void ApplicationCore::start_session() {
+void ApplicationCore::start_session(OutputMode output_mode) {
     if (session_active_ || finalizing_ || shutting_down_) {
         return;
     }
@@ -116,6 +260,8 @@ void ApplicationCore::start_session() {
     active_markdown_commands_ = markdown_commands_;
     active_custom_dictionary_ = custom_dictionary_;
     active_recognition_settings_ = recognition_settings_;
+    active_cleanup_settings_ = cleanup_settings_;
+    active_output_mode_ = output_mode;
     audio_queue_ = std::make_unique<AudioQueue>();
 
     if (!audio_capture_.start(*audio_queue_)) {
@@ -147,11 +293,20 @@ void ApplicationCore::start_session() {
     }
 
     session_active_ = true;
-    platform_.show_overlay(
-        active_recognition_settings_.mode == RecognitionMode::Streaming
-            ? "Listening..."
-            : "Recording..."
-    );
+    if (active_output_mode_ == OutputMode::Plain) {
+        platform_.show_overlay(
+            active_recognition_settings_.mode == RecognitionMode::Streaming
+                ? "Listening (plain text)..."
+                : "Recording (plain text)..."
+        );
+    }
+    else {
+        platform_.show_overlay(
+            active_recognition_settings_.mode == RecognitionMode::Streaming
+                ? "Listening..."
+                : "Recording..."
+        );
+    }
 }
 
 void ApplicationCore::stop_session() {
@@ -214,8 +369,10 @@ void ApplicationCore::consume_audio() {
                 transcript.clear();
             }
 
-            result.text = MarkdownFormatter::format(
+            result.text = prepare_output(
                 transcript,
+                active_output_mode_,
+                active_cleanup_settings_,
                 active_markdown_commands_
             );
         }
@@ -255,8 +412,10 @@ void ApplicationCore::consume_audio() {
             display += partial;
         }
 
-        display = MarkdownFormatter::format(
+        display = prepare_output(
             display,
+            active_output_mode_,
+            active_cleanup_settings_,
             active_markdown_commands_
         );
 
@@ -328,8 +487,10 @@ void ApplicationCore::consume_audio() {
         asr_.close_stream();
     }
 
-    result.text = MarkdownFormatter::format(
+    result.text = prepare_output(
         committed,
+        active_output_mode_,
+        active_cleanup_settings_,
         active_markdown_commands_
     );
 
@@ -379,7 +540,9 @@ void ApplicationCore::handle_session_done(SessionResult result) {
         return;
     }
 
-    result.text.push_back(' ');
+    if (active_output_mode_ == OutputMode::Formatted) {
+        result.text.push_back(' ');
+    }
     std::string insertion_error;
 
     if (!platform_.insert_text(result.text, insertion_error)) {

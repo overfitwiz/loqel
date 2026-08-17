@@ -49,12 +49,16 @@ bool FormattingSettings::load(
     MarkdownCommands& commands,
     CustomDictionarySettings& dictionary,
     RecognitionSettings& recognition,
+    CleanupSettings& cleanup,
+    HotkeySettings& hotkeys,
     std::string& error
 ) const {
     error.clear();
     commands = MarkdownCommands::defaults();
     dictionary = {};
     recognition = {};
+    cleanup = {};
+    hotkeys = {};
 
     std::error_code filesystem_error;
 
@@ -163,6 +167,68 @@ bool FormattingSettings::load(
         recognition.latency = LatencyPreset::HighestAccuracy;
     }
 
+    wchar_t cleanup_count_text[32] = {};
+    GetPrivateProfileStringW(
+        L"auto_cleanup",
+        L"count",
+        L"",
+        cleanup_count_text,
+        32,
+        path_.c_str()
+    );
+
+    // A missing count means this is an older settings file, so retain the
+    // defaults. A saved count of zero intentionally disables cleanup.
+    if (cleanup_count_text[0] != L'\0') {
+        cleanup.remove_words.clear();
+        const UINT cleanup_count = std::min<UINT>(
+            static_cast<UINT>(_wtoi(cleanup_count_text)),
+            1000
+        );
+
+        for (UINT i = 0; i < cleanup_count; ++i) {
+            const std::wstring key = L"word_" + std::to_wstring(i);
+            wchar_t value[512] = {};
+
+            GetPrivateProfileStringW(
+                L"auto_cleanup",
+                key.c_str(),
+                L"",
+                value,
+                512,
+                path_.c_str()
+            );
+
+            if (value[0] != L'\0') {
+                cleanup.remove_words.emplace_back(
+                    WindowsText::to_utf8(value)
+                );
+            }
+        }
+    }
+
+    const int formatted_key = GetPrivateProfileIntW(
+        L"hotkeys",
+        L"formatted_function_key",
+        hotkeys.formatted_function_key,
+        path_.c_str()
+    );
+    const int plain_key = GetPrivateProfileIntW(
+        L"hotkeys",
+        L"plain_function_key",
+        hotkeys.plain_function_key,
+        path_.c_str()
+    );
+
+    if (
+        formatted_key >= 1 && formatted_key <= 12 &&
+        plain_key >= 1 && plain_key <= 12 &&
+        formatted_key != plain_key
+    ) {
+        hotkeys.formatted_function_key = formatted_key;
+        hotkeys.plain_function_key = plain_key;
+    }
+
     return true;
 }
 
@@ -170,6 +236,8 @@ bool FormattingSettings::save(
     const MarkdownCommands& commands,
     const CustomDictionarySettings& dictionary,
     const RecognitionSettings& recognition,
+    const CleanupSettings& cleanup,
+    const HotkeySettings& hotkeys,
     std::string& error
 ) const {
     error.clear();
@@ -247,6 +315,54 @@ bool FormattingSettings::save(
 
             return false;
         }
+    }
+
+    if (!WritePrivateProfileStringW(
+            L"auto_cleanup",
+            L"count",
+            std::to_wstring(cleanup.remove_words.size()).c_str(),
+            path_.c_str()
+        )) {
+        error =
+            "Could not save auto-cleanup settings to: " +
+            WindowsText::to_utf8(path_.wstring());
+        return false;
+    }
+
+    for (std::size_t i = 0; i < cleanup.remove_words.size(); ++i) {
+        const std::wstring key = L"word_" + std::to_wstring(i);
+
+        if (!WritePrivateProfileStringW(
+                L"auto_cleanup",
+                key.c_str(),
+                WindowsText::from_utf8(cleanup.remove_words[i]).c_str(),
+                path_.c_str()
+            )) {
+            error =
+                "Could not save auto-cleanup settings to: " +
+                WindowsText::to_utf8(path_.wstring());
+            return false;
+        }
+    }
+
+    if (
+        !WritePrivateProfileStringW(
+            L"hotkeys",
+            L"formatted_function_key",
+            std::to_wstring(hotkeys.formatted_function_key).c_str(),
+            path_.c_str()
+        ) ||
+        !WritePrivateProfileStringW(
+            L"hotkeys",
+            L"plain_function_key",
+            std::to_wstring(hotkeys.plain_function_key).c_str(),
+            path_.c_str()
+        )
+    ) {
+        error =
+            "Could not save hotkey settings to: " +
+            WindowsText::to_utf8(path_.wstring());
+        return false;
     }
 
     const wchar_t* mode =

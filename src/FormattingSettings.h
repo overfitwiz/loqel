@@ -15,6 +15,8 @@ public:
         MarkdownCommands& commands,
         CustomDictionarySettings& dictionary,
         RecognitionSettings& recognition,
+        CleanupSettings& cleanup,
+        HotkeySettings& hotkeys,
         std::string& error
     ) const;
 
@@ -22,6 +24,8 @@ public:
         const MarkdownCommands& commands,
         const CustomDictionarySettings& dictionary,
         const RecognitionSettings& recognition,
+        const CleanupSettings& cleanup,
+        const HotkeySettings& hotkeys,
         std::string& error
     ) const;
 

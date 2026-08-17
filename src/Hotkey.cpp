@@ -1,18 +1,17 @@
 #include "Hotkey.h"
 
-namespace {
-
-constexpr DWORD kTriggerKey = VK_F8;
-
-}
-
 Hotkey::~Hotkey() {
     remove();
 }
 
-bool Hotkey::install(HINSTANCE instance, HWND window) {
+bool Hotkey::install(
+    HINSTANCE instance,
+    HWND window,
+    const HotkeySettings& settings
+) {
     window_ = window;
     owner_ = this;
+    configure(settings);
 
     hook_ = SetWindowsHookExW(
         WH_KEYBOARD_LL,
@@ -30,6 +29,15 @@ bool Hotkey::install(HINSTANCE instance, HWND window) {
     return true;
 }
 
+void Hotkey::configure(const HotkeySettings& settings) {
+    formatted_key_ = static_cast<DWORD>(
+        VK_F1 + settings.formatted_function_key - 1
+    );
+    plain_key_ = static_cast<DWORD>(
+        VK_F1 + settings.plain_function_key - 1
+    );
+}
+
 void Hotkey::remove() {
     if (hook_) {
         UnhookWindowsHookEx(hook_);
@@ -41,7 +49,7 @@ void Hotkey::remove() {
     }
 
     window_ = nullptr;
-    key_down_ = false;
+    active_key_ = 0;
 }
 
 LRESULT CALLBACK Hotkey::keyboard_proc(
@@ -54,7 +62,9 @@ LRESULT CALLBACK Hotkey::keyboard_proc(
             reinterpret_cast<const KBDLLHOOKSTRUCT*>(lparam);
 
         if (
-            key->vkCode == kTriggerKey &&
+            (key->vkCode == owner_->formatted_key_ ||
+             key->vkCode == owner_->plain_key_ ||
+             key->vkCode == owner_->active_key_) &&
             !(key->flags & LLKHF_INJECTED)
         ) {
             const bool down =
@@ -65,19 +75,21 @@ LRESULT CALLBACK Hotkey::keyboard_proc(
                 message == WM_KEYUP ||
                 message == WM_SYSKEYUP;
 
-            if (down && !owner_->key_down_) {
-                owner_->key_down_ = true;
+            if (down && owner_->active_key_ == 0) {
+                owner_->active_key_ = key->vkCode;
 
                 PostMessageW(
                     owner_->window_,
                     kDownMessage,
-                    0,
+                    key->vkCode == owner_->plain_key_
+                        ? kPlainMode
+                        : kFormattedMode,
                     0
                 );
             }
 
-            if (up && owner_->key_down_) {
-                owner_->key_down_ = false;
+            if (up && key->vkCode == owner_->active_key_) {
+                owner_->active_key_ = 0;
 
                 PostMessageW(
                     owner_->window_,
@@ -87,7 +99,8 @@ LRESULT CALLBACK Hotkey::keyboard_proc(
                 );
             }
 
-            // Prevent F8 from reaching the foreground application.
+            // Prevent configured dictation keys from reaching the foreground
+            // application.
             return 1;
         }
     }

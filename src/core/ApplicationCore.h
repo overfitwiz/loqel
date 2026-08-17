@@ -30,10 +30,11 @@ public:
     void set_settings(
         const MarkdownCommands& commands,
         const CustomDictionarySettings& dictionary,
-        const RecognitionSettings& recognition
+        const RecognitionSettings& recognition,
+        const CleanupSettings& cleanup
     );
 
-    void start_session();
+    void start_session(OutputMode output_mode);
     void stop_session();
     void shutdown();
 
@@ -60,6 +61,9 @@ private:
     CustomDictionarySettings active_custom_dictionary_;
     RecognitionSettings recognition_settings_;
     RecognitionSettings active_recognition_settings_;
+    CleanupSettings cleanup_settings_;
+    CleanupSettings active_cleanup_settings_;
+    OutputMode active_output_mode_ = OutputMode::Formatted;
 
     std::unique_ptr<AudioQueue> audio_queue_;
     std::thread consumer_thread_;

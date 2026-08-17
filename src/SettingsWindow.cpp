@@ -15,7 +15,7 @@ constexpr wchar_t kSettingsClassName[] =
 constexpr int kSaveButton = 2001;
 constexpr int kCancelButton = 2002;
 constexpr int kWindowWidth = 900;
-constexpr int kWindowHeight = 620;
+constexpr int kWindowHeight = 700;
 
 std::wstring control_text(HWND control) {
     const int length = GetWindowTextLengthW(control);
@@ -57,7 +57,7 @@ std::wstring lowercase(std::wstring text) {
     return text;
 }
 
-std::vector<std::string> dictionary_phrases(HWND control) {
+std::vector<std::string> line_phrases(HWND control) {
     std::vector<std::string> phrases;
     std::wistringstream lines(control_text(control));
     std::wstring line;
@@ -134,13 +134,15 @@ bool SettingsWindow::show(
     HWND owner,
     const MarkdownCommands& commands,
     const CustomDictionarySettings& dictionary,
-    const RecognitionSettings& recognition
+    const RecognitionSettings& recognition,
+    const CleanupSettings& cleanup,
+    const HotkeySettings& hotkeys
 ) {
     if (!window_ && !create(instance, owner)) {
         return false;
     }
 
-    populate(commands, dictionary, recognition);
+    populate(commands, dictionary, recognition, cleanup, hotkeys);
     center_on_owner();
 
     ShowWindow(window_, SW_SHOWNORMAL);
@@ -156,11 +158,15 @@ bool SettingsWindow::show(
 void SettingsWindow::populate(
     const MarkdownCommands& commands,
     const CustomDictionarySettings& dictionary,
-    const RecognitionSettings& recognition
+    const RecognitionSettings& recognition,
+    const CleanupSettings& cleanup,
+    const HotkeySettings& hotkeys
 ) {
     commands_ = commands;
     dictionary_ = dictionary;
     recognition_ = recognition;
+    cleanup_ = cleanup;
+    hotkeys_ = hotkeys;
 
     for (std::size_t i = 0; i < kMarkdownCommandCount; ++i) {
         if (edits_[i]) {
@@ -186,6 +192,15 @@ void SettingsWindow::populate(
         std::to_wstring(dictionary.boost).c_str()
     );
 
+    std::wstring cleanup_text;
+    for (const std::string& word : cleanup.remove_words) {
+        if (!cleanup_text.empty()) {
+            cleanup_text += L"\r\n";
+        }
+        cleanup_text += WindowsText::from_utf8(word);
+    }
+    SetWindowTextW(cleanup_edit_, cleanup_text.c_str());
+
     SendMessageW(
         mode_combo_,
         CB_SETCURSEL,
@@ -202,6 +217,18 @@ void SettingsWindow::populate(
     }
 
     SendMessageW(latency_combo_, CB_SETCURSEL, latency_index, 0);
+    SendMessageW(
+        formatted_hotkey_combo_,
+        CB_SETCURSEL,
+        hotkeys.formatted_function_key - 1,
+        0
+    );
+    SendMessageW(
+        plain_hotkey_combo_,
+        CB_SETCURSEL,
+        hotkeys.plain_function_key - 1,
+        0
+    );
 }
 
 void SettingsWindow::save_from_controls() {
@@ -241,7 +268,7 @@ void SettingsWindow::save_from_controls() {
     }
 
     CustomDictionarySettings dictionary;
-    dictionary.phrases = dictionary_phrases(dictionary_edit_);
+    dictionary.phrases = line_phrases(dictionary_edit_);
 
     for (std::size_t i = 0; i < dictionary.phrases.size(); ++i) {
         for (std::size_t previous = 0; previous < i; ++previous) {
@@ -302,9 +329,62 @@ void SettingsWindow::save_from_controls() {
             break;
     }
 
+    CleanupSettings cleanup;
+    cleanup.remove_words = line_phrases(cleanup_edit_);
+
+    for (std::size_t i = 0; i < cleanup.remove_words.size(); ++i) {
+        for (std::size_t previous = 0; previous < i; ++previous) {
+            if (
+                lowercase(WindowsText::from_utf8(cleanup.remove_words[i])) ==
+                lowercase(WindowsText::from_utf8(cleanup.remove_words[previous]))
+            ) {
+                MessageBoxW(
+                    window_,
+                    L"Each auto-cleanup word or phrase must be unique.",
+                    L"Auto cleanup",
+                    MB_OK | MB_ICONWARNING
+                );
+
+                SetFocus(cleanup_edit_);
+                return;
+            }
+        }
+    }
+
+    HotkeySettings hotkeys;
+    hotkeys.formatted_function_key =
+        static_cast<int>(SendMessageW(
+            formatted_hotkey_combo_,
+            CB_GETCURSEL,
+            0,
+            0
+        )) + 1;
+    hotkeys.plain_function_key =
+        static_cast<int>(SendMessageW(
+            plain_hotkey_combo_,
+            CB_GETCURSEL,
+            0,
+            0
+        )) + 1;
+
+    if (
+        hotkeys.formatted_function_key == hotkeys.plain_function_key
+    ) {
+        MessageBoxW(
+            window_,
+            L"Formatted and plain dictation must use different hotkeys.",
+            L"Hotkeys",
+            MB_OK | MB_ICONWARNING
+        );
+        SetFocus(plain_hotkey_combo_);
+        return;
+    }
+
     commands_ = std::move(candidate);
     dictionary_ = std::move(dictionary);
     recognition_ = recognition;
+    cleanup_ = std::move(cleanup);
+    hotkeys_ = hotkeys;
     ShowWindow(window_, SW_HIDE);
     PostMessageW(owner_, kSavedMessage, 0, 0);
 }
@@ -319,6 +399,14 @@ const CustomDictionarySettings& SettingsWindow::dictionary() const {
 
 const RecognitionSettings& SettingsWindow::recognition() const {
     return recognition_;
+}
+
+const CleanupSettings& SettingsWindow::cleanup() const {
+    return cleanup_;
+}
+
+const HotkeySettings& SettingsWindow::hotkeys() const {
+    return hotkeys_;
 }
 
 void SettingsWindow::center_on_owner() {
@@ -554,13 +642,112 @@ LRESULT CALLBACK SettingsWindow::window_proc(
             SendMessageW(latency_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(settings->latency_combo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
 
+            HWND formatted_hotkey_label = CreateWindowExW(
+                0,
+                L"STATIC",
+                L"Formatted + cleanup",
+                WS_CHILD | WS_VISIBLE | SS_LEFT,
+                555,
+                55,
+                155,
+                24,
+                window,
+                nullptr,
+                nullptr,
+                nullptr
+            );
+
+            settings->formatted_hotkey_combo_ = CreateWindowExW(
+                0,
+                L"COMBOBOX",
+                L"",
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP |
+                    CBS_DROPDOWNLIST | WS_VSCROLL,
+                720,
+                50,
+                145,
+                250,
+                window,
+                reinterpret_cast<HMENU>(4102),
+                nullptr,
+                nullptr
+            );
+
+            HWND plain_hotkey_label = CreateWindowExW(
+                0,
+                L"STATIC",
+                L"Plain / raw text",
+                WS_CHILD | WS_VISIBLE | SS_LEFT,
+                555,
+                95,
+                155,
+                24,
+                window,
+                nullptr,
+                nullptr,
+                nullptr
+            );
+
+            settings->plain_hotkey_combo_ = CreateWindowExW(
+                0,
+                L"COMBOBOX",
+                L"",
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP |
+                    CBS_DROPDOWNLIST | WS_VSCROLL,
+                720,
+                90,
+                145,
+                250,
+                window,
+                reinterpret_cast<HMENU>(4103),
+                nullptr,
+                nullptr
+            );
+
+            for (int function_key = 1; function_key <= 12; ++function_key) {
+                const std::wstring name = L"F" + std::to_wstring(function_key);
+                SendMessageW(
+                    settings->formatted_hotkey_combo_,
+                    CB_ADDSTRING,
+                    0,
+                    reinterpret_cast<LPARAM>(name.c_str())
+                );
+                SendMessageW(
+                    settings->plain_hotkey_combo_,
+                    CB_ADDSTRING,
+                    0,
+                    reinterpret_cast<LPARAM>(name.c_str())
+                );
+            }
+
+            HWND hotkey_hint = CreateWindowExW(
+                0,
+                L"STATIC",
+                L"Dictation hotkeys — hold a key while speaking",
+                WS_CHILD | WS_VISIBLE | SS_LEFT,
+                555,
+                16,
+                310,
+                22,
+                window,
+                nullptr,
+                nullptr,
+                nullptr
+            );
+
+            SendMessageW(formatted_hotkey_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            SendMessageW(settings->formatted_hotkey_combo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            SendMessageW(plain_hotkey_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            SendMessageW(settings->plain_hotkey_combo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            SendMessageW(hotkey_hint, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+
             HWND dictionary_label = CreateWindowExW(
                 0,
                 L"STATIC",
                 L"Custom dictionary (one word or phrase per line)",
                 WS_CHILD | WS_VISIBLE,
                 555,
-                50,
+                145,
                 310,
                 22,
                 window,
@@ -576,9 +763,9 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP |
                     ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL,
                 555,
-                76,
+                171,
                 310,
-                360,
+                145,
                 window,
                 reinterpret_cast<HMENU>(4000),
                 nullptr,
@@ -591,7 +778,7 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"Boost (2–3 recommended, maximum 5)",
                 WS_CHILD | WS_VISIBLE,
                 555,
-                452,
+                332,
                 240,
                 22,
                 window,
@@ -606,7 +793,7 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"2.0",
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
                 800,
-                447,
+                327,
                 65,
                 27,
                 window,
@@ -615,12 +802,46 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 nullptr
             );
 
+            HWND cleanup_label = CreateWindowExW(
+                0,
+                L"STATIC",
+                L"Remove words (one word or phrase per line)",
+                WS_CHILD | WS_VISIBLE,
+                555,
+                377,
+                310,
+                22,
+                window,
+                nullptr,
+                nullptr,
+                nullptr
+            );
+
+            settings->cleanup_edit_ = CreateWindowExW(
+                WS_EX_CLIENTEDGE,
+                L"EDIT",
+                L"",
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP |
+                    ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL,
+                555,
+                403,
+                310,
+                160,
+                window,
+                reinterpret_cast<HMENU>(4002),
+                nullptr,
+                nullptr
+            );
+
             SendMessageW(dictionary_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(settings->dictionary_edit_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(boost_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(settings->boost_edit_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            SendMessageW(cleanup_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            SendMessageW(settings->cleanup_edit_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(settings->dictionary_edit_, EM_SETLIMITTEXT, 32767, 0);
             SendMessageW(settings->boost_edit_, EM_SETLIMITTEXT, 8, 0);
+            SendMessageW(settings->cleanup_edit_, EM_SETLIMITTEXT, 32767, 0);
 
             HWND save = CreateWindowExW(
                 0,
@@ -628,7 +849,7 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"Save",
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
                 680,
-                535,
+                615,
                 85,
                 30,
                 window,
@@ -643,7 +864,7 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"Cancel",
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 775,
-                535,
+                615,
                 85,
                 30,
                 window,

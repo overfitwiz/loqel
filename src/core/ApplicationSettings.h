@@ -36,3 +36,17 @@ struct CustomDictionarySettings {
     std::vector<std::string> phrases;
     float boost = 2.0f;
 };
+
+struct CleanupSettings {
+    std::vector<std::string> remove_words = {"Um", "uhm", "eh"};
+};
+
+struct HotkeySettings {
+    int formatted_function_key = 8;
+    int plain_function_key = 9;
+};
+
+enum class OutputMode {
+    Formatted,
+    Plain
+};

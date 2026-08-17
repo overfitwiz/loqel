@@ -84,6 +84,8 @@ int App::run() {
             markdown_commands_,
             custom_dictionary_,
             recognition_settings_,
+            cleanup_settings_,
+            hotkey_settings_,
             settings_error
         )) {
         show_message(
@@ -96,7 +98,8 @@ int App::run() {
     core_.set_settings(
         markdown_commands_,
         custom_dictionary_,
-        recognition_settings_
+        recognition_settings_,
+        cleanup_settings_
     );
 
     if (!tray_icon_.create(window_)) {
@@ -132,10 +135,10 @@ int App::run() {
         return 5;
     }
 
-    if (!hotkey_.install(instance_, window_)) {
+    if (!hotkey_.install(instance_, window_, hotkey_settings_)) {
         show_message(
             "NeMo Talk",
-            "Could not install the global F8 trigger.",
+            "Could not install the global dictation hotkeys.",
             MessageKind::Error
         );
         return 6;
@@ -274,7 +277,11 @@ LRESULT CALLBACK App::window_proc(
 
     switch (message) {
         case Hotkey::kDownMessage:
-            app->core_.start_session();
+            app->core_.start_session(
+                wparam == Hotkey::kPlainMode
+                    ? OutputMode::Plain
+                    : OutputMode::Formatted
+            );
             return 0;
 
         case Hotkey::kUpMessage:
@@ -302,11 +309,13 @@ LRESULT CALLBACK App::window_proc(
                         window,
                         app->markdown_commands_,
                         app->custom_dictionary_,
-                        app->recognition_settings_
+                        app->recognition_settings_,
+                        app->cleanup_settings_,
+                        app->hotkey_settings_
                     )) {
                     app->show_message(
                         "NeMo Talk",
-                        "Could not open formatting settings.",
+                        "Could not open settings.",
                         MessageKind::Error
                     );
                 }
@@ -323,10 +332,14 @@ LRESULT CALLBACK App::window_proc(
             app->markdown_commands_ = app->settings_window_.commands();
             app->custom_dictionary_ = app->settings_window_.dictionary();
             app->recognition_settings_ = app->settings_window_.recognition();
+            app->cleanup_settings_ = app->settings_window_.cleanup();
+            app->hotkey_settings_ = app->settings_window_.hotkeys();
+            app->hotkey_.configure(app->hotkey_settings_);
             app->core_.set_settings(
                 app->markdown_commands_,
                 app->custom_dictionary_,
-                app->recognition_settings_
+                app->recognition_settings_,
+                app->cleanup_settings_
             );
 
             std::string error;
@@ -334,6 +347,8 @@ LRESULT CALLBACK App::window_proc(
                     app->markdown_commands_,
                     app->custom_dictionary_,
                     app->recognition_settings_,
+                    app->cleanup_settings_,
+                    app->hotkey_settings_,
                     error
                 )) {
                 app->show_message(

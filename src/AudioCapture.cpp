@@ -691,7 +691,7 @@ void WindowsAudioCapture::capture_loop(
                 );
         }
 
-        // Capture anything already waiting when F8
+        // Capture anything already waiting when the dictation key
         // was released.
         if (ok) {
             ok =

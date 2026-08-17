@@ -17,12 +17,16 @@ public:
         HWND owner,
         const MarkdownCommands& commands,
         const CustomDictionarySettings& dictionary,
-        const RecognitionSettings& recognition
+        const RecognitionSettings& recognition,
+        const CleanupSettings& cleanup,
+        const HotkeySettings& hotkeys
     );
 
     const MarkdownCommands& commands() const;
     const CustomDictionarySettings& dictionary() const;
     const RecognitionSettings& recognition() const;
+    const CleanupSettings& cleanup() const;
+    const HotkeySettings& hotkeys() const;
     void destroy();
 
 private:
@@ -30,7 +34,9 @@ private:
     void populate(
         const MarkdownCommands& commands,
         const CustomDictionarySettings& dictionary,
-        const RecognitionSettings& recognition
+        const RecognitionSettings& recognition,
+        const CleanupSettings& cleanup,
+        const HotkeySettings& hotkeys
     );
     void save_from_controls();
     void center_on_owner();
@@ -50,8 +56,13 @@ private:
     HWND boost_edit_ = nullptr;
     HWND mode_combo_ = nullptr;
     HWND latency_combo_ = nullptr;
+    HWND cleanup_edit_ = nullptr;
+    HWND formatted_hotkey_combo_ = nullptr;
+    HWND plain_hotkey_combo_ = nullptr;
 
     MarkdownCommands commands_ = MarkdownCommands::defaults();
     CustomDictionarySettings dictionary_;
     RecognitionSettings recognition_;
+    CleanupSettings cleanup_;
+    HotkeySettings hotkeys_;
 };
