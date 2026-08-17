@@ -81,6 +81,8 @@ if(LOQEL_BUILD_APP)
         )
     endif()
 
+    enable_language(RC)
+
     add_executable(
         speech_app
         WIN32
@@ -95,6 +97,7 @@ if(LOQEL_BUILD_APP)
         src/SettingsWindow.cpp
         src/AudioCapture.cpp
         src/windows/WindowsText.cpp
+        src/resources.rc
     )
 
     target_include_directories(

@@ -1,0 +1,3 @@
+#include "resource.h"
+
+IDI_LOQEL_APP ICON "assets\\loqel.ico"

@@ -4,6 +4,7 @@
 #include <memory>
 #include <utility>
 
+#include "resource.h"
 #include "windows/WindowsText.h"
 
 namespace {
@@ -43,6 +44,13 @@ bool App::create_window() {
     window_class.lpfnWndProc = &App::window_proc;
     window_class.hInstance = instance_;
     window_class.lpszClassName = kWindowClassName;
+    window_class.hIcon = LoadIconW(
+        instance_,
+        MAKEINTRESOURCEW(IDI_LOQEL_APP)
+    );
+    if (!window_class.hIcon) {
+        window_class.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    }
 
     if (
         !RegisterClassW(&window_class) &&

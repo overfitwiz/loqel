@@ -63,6 +63,16 @@ rule CXX_COMPILER__speech_app_unscanned_Release
 
 
 #############################################
+# Rule for compiling RC files.
+
+rule RC_COMPILER__speech_app_unscanned_Release
+  depfile = $DEP_FILE
+  deps = gcc
+  command = C:/PROGRA~1/MIB055~1/18/COMMUN~1/Common7/IDE/COMMON~1/MICROS~1/CMake/CMake/bin/cmcldeps.exe RC $in $DEP_FILE $out "Remarque : inclusion du fichier :  " "cl" ${LAUNCHER}${CODE_CHECK}C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\rc.exe $DEFINES $INCLUDES $FLAGS /fo $out $in
+  description = Building RC object $out
+
+
+#############################################
 # Rule for linking CXX executable.
 
 rule CXX_EXECUTABLE_LINKER__speech_app_Release

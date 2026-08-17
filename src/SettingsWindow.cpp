@@ -5,6 +5,7 @@
 #include <sstream>
 #include <string>
 
+#include "resource.h"
 #include "windows/WindowsText.h"
 
 namespace {
@@ -14,8 +15,34 @@ constexpr wchar_t kSettingsClassName[] =
 
 constexpr int kSaveButton = 2001;
 constexpr int kCancelButton = 2002;
+constexpr int kNavigationBase = 5000;
 constexpr int kWindowWidth = 900;
-constexpr int kWindowHeight = 700;
+constexpr int kWindowHeight = 620;
+constexpr int kSidebarWidth = 205;
+
+enum SettingsTab : std::size_t {
+    GeneralTab,
+    HotkeysTab,
+    DictionaryTab,
+    CleanupTab,
+    MarkdownTab,
+    SettingsTabCount
+};
+
+constexpr std::array<const wchar_t*, SettingsTabCount> kTabNames = {
+    L"General",
+    L"Hotkeys",
+    L"Custom dictionary",
+    L"Remove words",
+    L"Markdown triggers"
+};
+
+constexpr COLORREF kSidebarColor = RGB(25, 28, 35);
+constexpr COLORREF kSidebarSelectedColor = RGB(43, 48, 59);
+constexpr COLORREF kSurfaceColor = RGB(247, 248, 250);
+constexpr COLORREF kTextColor = RGB(30, 34, 42);
+constexpr COLORREF kMutedColor = RGB(106, 114, 126);
+constexpr COLORREF kAccentColor = RGB(75, 112, 232);
 
 std::wstring control_text(HWND control) {
     const int length = GetWindowTextLengthW(control);
@@ -99,6 +126,13 @@ bool SettingsWindow::create(
     window_class.lpfnWndProc = &SettingsWindow::window_proc;
     window_class.hInstance = instance;
     window_class.lpszClassName = kSettingsClassName;
+    window_class.hIcon = LoadIconW(
+        instance,
+        MAKEINTRESOURCEW(IDI_LOQEL_APP)
+    );
+    if (!window_class.hIcon) {
+        window_class.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    }
     window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     window_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
 
@@ -147,10 +181,7 @@ bool SettingsWindow::show(
 
     ShowWindow(window_, SW_SHOWNORMAL);
     SetForegroundWindow(window_);
-
-    if (!edits_.empty() && edits_[0]) {
-        SetFocus(edits_[0]);
-    }
+    show_tab(active_tab_);
 
     return true;
 }
@@ -409,6 +440,46 @@ const HotkeySettings& SettingsWindow::hotkeys() const {
     return hotkeys_;
 }
 
+void SettingsWindow::add_to_tab(
+    std::size_t tab,
+    HWND control
+) {
+    if (tab < tab_controls_.size() && control) {
+        tab_controls_[tab].push_back(control);
+    }
+}
+
+void SettingsWindow::show_tab(std::size_t tab) {
+    if (tab >= tab_controls_.size()) {
+        return;
+    }
+
+    active_tab_ = tab;
+
+    for (std::size_t i = 0; i < tab_controls_.size(); ++i) {
+        const int visibility = i == tab ? SW_SHOW : SW_HIDE;
+        for (HWND control : tab_controls_[i]) {
+            ShowWindow(control, visibility);
+        }
+    }
+
+    for (HWND button : navigation_buttons_) {
+        if (button) {
+            InvalidateRect(button, nullptr, TRUE);
+        }
+    }
+
+    for (HWND control : tab_controls_[tab]) {
+        if (
+            (GetWindowLongPtrW(control, GWL_STYLE) & WS_TABSTOP) != 0 &&
+            IsWindowEnabled(control)
+        ) {
+            SetFocus(control);
+            break;
+        }
+    }
+}
+
 void SettingsWindow::center_on_owner() {
     RECT area = {};
 
@@ -473,18 +544,129 @@ LRESULT CALLBACK SettingsWindow::window_proc(
 
     switch (message) {
         case WM_CREATE: {
-            HFONT font = static_cast<HFONT>(
-                GetStockObject(DEFAULT_GUI_FONT)
+            settings->ui_font_ = CreateFontW(
+                -16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI"
+            );
+            settings->heading_font_ = CreateFontW(
+                -27, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI"
+            );
+            settings->brand_font_ = CreateFontW(
+                -20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI"
+            );
+
+            HFONT font = settings->ui_font_
+                ? settings->ui_font_
+                : static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+
+            settings->brand_label_ = CreateWindowExW(
+                0,
+                L"STATIC",
+                L"NeMo Talk",
+                WS_CHILD | WS_VISIBLE,
+                24,
+                24,
+                160,
+                30,
+                window,
+                nullptr,
+                nullptr,
+                nullptr
+            );
+            SendMessageW(
+                settings->brand_label_,
+                WM_SETFONT,
+                reinterpret_cast<WPARAM>(
+                    settings->brand_font_ ? settings->brand_font_ : font
+                ),
+                TRUE
+            );
+
+            for (std::size_t i = 0; i < SettingsTabCount; ++i) {
+                settings->navigation_buttons_[i] = CreateWindowExW(
+                    0,
+                    L"BUTTON",
+                    kTabNames[i],
+                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+                    12,
+                    84 + static_cast<int>(i) * 48,
+                    181,
+                    40,
+                    window,
+                    reinterpret_cast<HMENU>(kNavigationBase + i),
+                    nullptr,
+                    nullptr
+                );
+                SendMessageW(
+                    settings->navigation_buttons_[i],
+                    WM_SETFONT,
+                    reinterpret_cast<WPARAM>(font),
+                    TRUE
+                );
+            }
+
+            const auto add_page_heading =
+                [&](std::size_t tab, const wchar_t* title, const wchar_t* description) {
+                    HWND heading = CreateWindowExW(
+                        0, L"STATIC", title, WS_CHILD | WS_VISIBLE,
+                        250, 36, 590, 38, window, nullptr, nullptr, nullptr
+                    );
+                    HWND detail = CreateWindowExW(
+                        0, L"STATIC", description, WS_CHILD | WS_VISIBLE,
+                        250, 80, 590, 42, window, nullptr, nullptr, nullptr
+                    );
+                    SendMessageW(
+                        heading,
+                        WM_SETFONT,
+                        reinterpret_cast<WPARAM>(
+                            settings->heading_font_ ? settings->heading_font_ : font
+                        ),
+                        TRUE
+                    );
+                    SendMessageW(detail, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+                    settings->add_to_tab(tab, heading);
+                    settings->add_to_tab(tab, detail);
+                };
+
+            add_page_heading(
+                GeneralTab,
+                L"General",
+                L"Choose the recognition profile used for every dictation session."
+            );
+            add_page_heading(
+                HotkeysTab,
+                L"Hotkeys",
+                L"Assign separate hold-to-talk keys for formatted and plain text."
+            );
+            add_page_heading(
+                DictionaryTab,
+                L"Custom dictionary",
+                L"Help recognition prefer names, technical terms, and domain phrases."
+            );
+            add_page_heading(
+                CleanupTab,
+                L"Remove words",
+                L"One filler word or phrase per line. Applied to formatted dictation."
+            );
+            add_page_heading(
+                MarkdownTab,
+                L"Markdown triggers",
+                L"Customize the spoken commands converted into Markdown structure."
             );
 
             HWND intro = CreateWindowExW(
                 0,
                 L"STATIC",
-                L"Customize the spoken triggers converted to Markdown.",
+                L"Spoken command",
                 WS_CHILD | WS_VISIBLE,
-                20,
-                16,
-                850,
+                450,
+                126,
+                390,
                 22,
                 window,
                 nullptr,
@@ -493,9 +675,10 @@ LRESULT CALLBACK SettingsWindow::window_proc(
             );
 
             SendMessageW(intro, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            settings->add_to_tab(MarkdownTab, intro);
 
             for (std::size_t i = 0; i < kMarkdownCommandCount; ++i) {
-                const int y = 50 + static_cast<int>(i) * 43;
+                const int y = 155 + static_cast<int>(i) * 48;
                 const auto command = static_cast<MarkdownCommand>(i);
 
                 const std::wstring label_text = WindowsText::from_utf8(
@@ -507,9 +690,9 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                     L"STATIC",
                     label_text.c_str(),
                     WS_CHILD | WS_VISIBLE | SS_LEFT,
-                    20,
+                    250,
                     y + 5,
-                    155,
+                    180,
                     24,
                     window,
                     nullptr,
@@ -522,9 +705,9 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                     L"EDIT",
                     L"",
                     WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-                    180,
+                    450,
                     y,
-                    350,
+                    390,
                     27,
                     window,
                     reinterpret_cast<HMENU>(3000 + i),
@@ -541,16 +724,92 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 );
 
                 SendMessageW(settings->edits_[i], EM_SETLIMITTEXT, 200, 0);
+                settings->add_to_tab(MarkdownTab, label);
+                settings->add_to_tab(MarkdownTab, settings->edits_[i]);
             }
+
+            HWND language_label = CreateWindowExW(
+                0,
+                L"STATIC",
+                L"Language",
+                WS_CHILD | WS_VISIBLE | SS_LEFT,
+                250,
+                160,
+                180,
+                24,
+                window,
+                nullptr,
+                nullptr,
+                nullptr
+            );
+
+            settings->language_combo_ = CreateWindowExW(
+                0,
+                L"COMBOBOX",
+                L"",
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+                450,
+                155,
+                390,
+                120,
+                window,
+                reinterpret_cast<HMENU>(4200),
+                nullptr,
+                nullptr
+            );
+            SendMessageW(
+                settings->language_combo_,
+                CB_ADDSTRING,
+                0,
+                reinterpret_cast<LPARAM>(L"English")
+            );
+            SendMessageW(settings->language_combo_, CB_SETCURSEL, 0, 0);
+
+            HWND model_label = CreateWindowExW(
+                0,
+                L"STATIC",
+                L"Speech model",
+                WS_CHILD | WS_VISIBLE | SS_LEFT,
+                250,
+                215,
+                180,
+                24,
+                window,
+                nullptr,
+                nullptr,
+                nullptr
+            );
+
+            settings->model_combo_ = CreateWindowExW(
+                0,
+                L"COMBOBOX",
+                L"",
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
+                450,
+                210,
+                390,
+                120,
+                window,
+                reinterpret_cast<HMENU>(4201),
+                nullptr,
+                nullptr
+            );
+            SendMessageW(
+                settings->model_combo_,
+                CB_ADDSTRING,
+                0,
+                reinterpret_cast<LPARAM>(L"Default model")
+            );
+            SendMessageW(settings->model_combo_, CB_SETCURSEL, 0, 0);
 
             HWND mode_label = CreateWindowExW(
                 0,
                 L"STATIC",
                 L"Recognition mode",
                 WS_CHILD | WS_VISIBLE | SS_LEFT,
-                20,
-                375,
-                155,
+                250,
+                270,
+                180,
                 24,
                 window,
                 nullptr,
@@ -564,9 +823,9 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"",
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP |
                     CBS_DROPDOWNLIST | WS_VSCROLL,
-                180,
-                370,
-                350,
+                450,
+                265,
+                390,
                 120,
                 window,
                 reinterpret_cast<HMENU>(4100),
@@ -592,9 +851,9 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"STATIC",
                 L"Streaming latency",
                 WS_CHILD | WS_VISIBLE | SS_LEFT,
-                20,
-                420,
-                155,
+                250,
+                325,
+                180,
                 24,
                 window,
                 nullptr,
@@ -608,9 +867,9 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"",
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP |
                     CBS_DROPDOWNLIST | WS_VSCROLL,
-                180,
-                415,
-                350,
+                450,
+                320,
+                390,
                 150,
                 window,
                 reinterpret_cast<HMENU>(4101),
@@ -641,15 +900,27 @@ LRESULT CALLBACK SettingsWindow::window_proc(
             SendMessageW(settings->mode_combo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(latency_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(settings->latency_combo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            SendMessageW(language_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            SendMessageW(settings->language_combo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            SendMessageW(model_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            SendMessageW(settings->model_combo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            settings->add_to_tab(GeneralTab, language_label);
+            settings->add_to_tab(GeneralTab, settings->language_combo_);
+            settings->add_to_tab(GeneralTab, model_label);
+            settings->add_to_tab(GeneralTab, settings->model_combo_);
+            settings->add_to_tab(GeneralTab, mode_label);
+            settings->add_to_tab(GeneralTab, settings->mode_combo_);
+            settings->add_to_tab(GeneralTab, latency_label);
+            settings->add_to_tab(GeneralTab, settings->latency_combo_);
 
             HWND formatted_hotkey_label = CreateWindowExW(
                 0,
                 L"STATIC",
                 L"Formatted + cleanup",
                 WS_CHILD | WS_VISIBLE | SS_LEFT,
-                555,
-                55,
-                155,
+                250,
+                160,
+                180,
                 24,
                 window,
                 nullptr,
@@ -663,9 +934,9 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"",
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP |
                     CBS_DROPDOWNLIST | WS_VSCROLL,
-                720,
-                50,
-                145,
+                450,
+                155,
+                390,
                 250,
                 window,
                 reinterpret_cast<HMENU>(4102),
@@ -678,9 +949,9 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"STATIC",
                 L"Plain / raw text",
                 WS_CHILD | WS_VISIBLE | SS_LEFT,
-                555,
-                95,
-                155,
+                250,
+                215,
+                180,
                 24,
                 window,
                 nullptr,
@@ -694,9 +965,9 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"",
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP |
                     CBS_DROPDOWNLIST | WS_VSCROLL,
-                720,
-                90,
-                145,
+                450,
+                210,
+                390,
                 250,
                 window,
                 reinterpret_cast<HMENU>(4103),
@@ -723,12 +994,12 @@ LRESULT CALLBACK SettingsWindow::window_proc(
             HWND hotkey_hint = CreateWindowExW(
                 0,
                 L"STATIC",
-                L"Dictation hotkeys — hold a key while speaking",
+                L"Function keys F1–F12 are available. Each mode must use a different key.",
                 WS_CHILD | WS_VISIBLE | SS_LEFT,
-                555,
-                16,
-                310,
-                22,
+                450,
+                270,
+                390,
+                42,
                 window,
                 nullptr,
                 nullptr,
@@ -740,15 +1011,20 @@ LRESULT CALLBACK SettingsWindow::window_proc(
             SendMessageW(plain_hotkey_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(settings->plain_hotkey_combo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(hotkey_hint, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            settings->add_to_tab(HotkeysTab, formatted_hotkey_label);
+            settings->add_to_tab(HotkeysTab, settings->formatted_hotkey_combo_);
+            settings->add_to_tab(HotkeysTab, plain_hotkey_label);
+            settings->add_to_tab(HotkeysTab, settings->plain_hotkey_combo_);
+            settings->add_to_tab(HotkeysTab, hotkey_hint);
 
             HWND dictionary_label = CreateWindowExW(
                 0,
                 L"STATIC",
                 L"Custom dictionary (one word or phrase per line)",
                 WS_CHILD | WS_VISIBLE,
-                555,
-                145,
-                310,
+                250,
+                140,
+                590,
                 22,
                 window,
                 nullptr,
@@ -762,10 +1038,10 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"",
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP |
                     ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL,
-                555,
-                171,
-                310,
-                145,
+                250,
+                170,
+                590,
+                280,
                 window,
                 reinterpret_cast<HMENU>(4000),
                 nullptr,
@@ -777,9 +1053,9 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"STATIC",
                 L"Boost (2–3 recommended, maximum 5)",
                 WS_CHILD | WS_VISIBLE,
-                555,
-                332,
-                240,
+                250,
+                475,
+                390,
                 22,
                 window,
                 nullptr,
@@ -792,8 +1068,8 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"EDIT",
                 L"2.0",
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-                800,
-                327,
+                775,
+                470,
                 65,
                 27,
                 window,
@@ -807,9 +1083,9 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"STATIC",
                 L"Remove words (one word or phrase per line)",
                 WS_CHILD | WS_VISIBLE,
-                555,
-                377,
-                310,
+                250,
+                140,
+                590,
                 22,
                 window,
                 nullptr,
@@ -823,10 +1099,10 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"",
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP |
                     ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL,
-                555,
-                403,
-                310,
-                160,
+                250,
+                170,
+                590,
+                330,
                 window,
                 reinterpret_cast<HMENU>(4002),
                 nullptr,
@@ -842,6 +1118,12 @@ LRESULT CALLBACK SettingsWindow::window_proc(
             SendMessageW(settings->dictionary_edit_, EM_SETLIMITTEXT, 32767, 0);
             SendMessageW(settings->boost_edit_, EM_SETLIMITTEXT, 8, 0);
             SendMessageW(settings->cleanup_edit_, EM_SETLIMITTEXT, 32767, 0);
+            settings->add_to_tab(DictionaryTab, dictionary_label);
+            settings->add_to_tab(DictionaryTab, settings->dictionary_edit_);
+            settings->add_to_tab(DictionaryTab, boost_label);
+            settings->add_to_tab(DictionaryTab, settings->boost_edit_);
+            settings->add_to_tab(CleanupTab, cleanup_label);
+            settings->add_to_tab(CleanupTab, settings->cleanup_edit_);
 
             HWND save = CreateWindowExW(
                 0,
@@ -849,7 +1131,7 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"Save",
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
                 680,
-                615,
+                535,
                 85,
                 30,
                 window,
@@ -864,7 +1146,7 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"Cancel",
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
                 775,
-                615,
+                535,
                 85,
                 30,
                 window,
@@ -875,11 +1157,100 @@ LRESULT CALLBACK SettingsWindow::window_proc(
 
             SendMessageW(save, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(cancel, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            settings->show_tab(GeneralTab);
 
             return 0;
         }
 
+        case WM_ERASEBKGND: {
+            HDC dc = reinterpret_cast<HDC>(wparam);
+            RECT client = {};
+            GetClientRect(window, &client);
+
+            HBRUSH surface = CreateSolidBrush(kSurfaceColor);
+            FillRect(dc, &client, surface);
+            DeleteObject(surface);
+
+            RECT sidebar = client;
+            sidebar.right = kSidebarWidth;
+            HBRUSH navigation = CreateSolidBrush(kSidebarColor);
+            FillRect(dc, &sidebar, navigation);
+            DeleteObject(navigation);
+            return 1;
+        }
+
+        case WM_CTLCOLORSTATIC: {
+            HDC dc = reinterpret_cast<HDC>(wparam);
+            HWND control = reinterpret_cast<HWND>(lparam);
+            SetBkMode(dc, TRANSPARENT);
+            SetTextColor(
+                dc,
+                control == settings->brand_label_ ? RGB(245, 247, 250) : kTextColor
+            );
+            return reinterpret_cast<LRESULT>(GetStockObject(NULL_BRUSH));
+        }
+
+        case WM_DRAWITEM: {
+            const auto* item = reinterpret_cast<const DRAWITEMSTRUCT*>(lparam);
+            if (
+                item->CtlID >= kNavigationBase &&
+                item->CtlID < kNavigationBase + SettingsTabCount
+            ) {
+                const std::size_t tab = item->CtlID - kNavigationBase;
+                const bool selected = settings->active_tab_ == tab;
+                const COLORREF background = selected
+                    ? kSidebarSelectedColor
+                    : kSidebarColor;
+
+                HBRUSH brush = CreateSolidBrush(background);
+                FillRect(item->hDC, &item->rcItem, brush);
+                DeleteObject(brush);
+
+                if (selected) {
+                    RECT accent = item->rcItem;
+                    accent.right = accent.left + 3;
+                    HBRUSH accent_brush = CreateSolidBrush(kAccentColor);
+                    FillRect(item->hDC, &accent, accent_brush);
+                    DeleteObject(accent_brush);
+                }
+
+                wchar_t text[64] = {};
+                GetWindowTextW(item->hwndItem, text, 64);
+                RECT text_area = item->rcItem;
+                text_area.left += 18;
+                SetBkMode(item->hDC, TRANSPARENT);
+                SetTextColor(
+                    item->hDC,
+                    selected ? RGB(255, 255, 255) : RGB(180, 187, 198)
+                );
+                HFONT previous = static_cast<HFONT>(SelectObject(
+                    item->hDC,
+                    settings->ui_font_
+                        ? settings->ui_font_
+                        : GetStockObject(DEFAULT_GUI_FONT)
+                ));
+                DrawTextW(
+                    item->hDC,
+                    text,
+                    -1,
+                    &text_area,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE
+                );
+                SelectObject(item->hDC, previous);
+                return TRUE;
+            }
+            break;
+        }
+
         case WM_COMMAND:
+            if (
+                LOWORD(wparam) >= kNavigationBase &&
+                LOWORD(wparam) < kNavigationBase + SettingsTabCount
+            ) {
+                settings->show_tab(LOWORD(wparam) - kNavigationBase);
+                return 0;
+            }
+
             if (LOWORD(wparam) == kSaveButton) {
                 settings->save_from_controls();
                 return 0;
@@ -897,6 +1268,18 @@ LRESULT CALLBACK SettingsWindow::window_proc(
             return 0;
 
         case WM_DESTROY:
+            if (settings->ui_font_) {
+                DeleteObject(settings->ui_font_);
+                settings->ui_font_ = nullptr;
+            }
+            if (settings->heading_font_) {
+                DeleteObject(settings->heading_font_);
+                settings->heading_font_ = nullptr;
+            }
+            if (settings->brand_font_) {
+                DeleteObject(settings->brand_font_);
+                settings->brand_font_ = nullptr;
+            }
             settings->window_ = nullptr;
             return 0;
     }

@@ -2,6 +2,8 @@
 
 #include <shellapi.h>
 
+#include "resource.h"
+
 namespace {
 
 constexpr UINT kTrayId = 1;
@@ -25,11 +27,17 @@ bool TrayIcon::create(HWND window) {
         NIF_TIP;
 
     data_.uCallbackMessage = kTrayMessage;
-    data_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    data_.hIcon = LoadIconW(
+        GetModuleHandleW(nullptr),
+        MAKEINTRESOURCEW(IDI_LOQEL_APP)
+    );
+    if (!data_.hIcon) {
+        data_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    }
 
     wcscpy_s(
         data_.szTip,
-        L"Speech App"
+        L"Loqel"
     );
 
     created_ =

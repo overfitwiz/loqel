@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <array>
+#include <vector>
 
 #include "FormattingSettings.h"
 
@@ -40,6 +41,8 @@ private:
     );
     void save_from_controls();
     void center_on_owner();
+    void add_to_tab(std::size_t tab, HWND control);
+    void show_tab(std::size_t tab);
 
     static LRESULT CALLBACK window_proc(
         HWND window,
@@ -59,6 +62,16 @@ private:
     HWND cleanup_edit_ = nullptr;
     HWND formatted_hotkey_combo_ = nullptr;
     HWND plain_hotkey_combo_ = nullptr;
+    HWND language_combo_ = nullptr;
+    HWND model_combo_ = nullptr;
+    HWND brand_label_ = nullptr;
+
+    std::array<HWND, 5> navigation_buttons_ = {};
+    std::array<std::vector<HWND>, 5> tab_controls_;
+    std::size_t active_tab_ = 0;
+    HFONT ui_font_ = nullptr;
+    HFONT heading_font_ = nullptr;
+    HFONT brand_font_ = nullptr;
 
     MarkdownCommands commands_ = MarkdownCommands::defaults();
     CustomDictionarySettings dictionary_;
