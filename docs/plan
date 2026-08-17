@@ -1,0 +1,77 @@
+HISTORICAL IMPLEMENTATION PLAN
+
+This file records the incremental implementation sequence. For current behavior,
+see application.md. For current design and ownership, see architecture.md.
+
+STEP 1  Program skeleton
+        main.cpp + App
+        ✓ done
+
+STEP 2  Hidden Windows window + message loop
+        ✓ done
+
+STEP 3  TrayIcon
+        App becomes visible in Windows tray
+        right-click → Exit
+        ✓ done
+
+
+STEP 4  Hotkey
+        global F8 down/up detection
+        still no audio
+✓ done
+STEP 5  Overlay
+        F8 down → "Listening..."
+        F8 up   → hide
+        ✓ done
+
+STEP 6  AsrEngine
+        load Nemotron
+        no microphone yet
+✓ done
+
+STEP 7  AudioCapture
+        WASAPI microphone capture only
+        no ASR integration
+✓ done
+STEP 8  DebugArtifacts
+        save captured microphone audio to WAV
+        verify audio pipeline independently
+✓ SKIP - NOT IMPLEMENTED
+
+STEP 9  AudioQueue
+        introduce producer/consumer threading
+✓ done
+STEP 10 Connect AudioCapture → AsrEngine
+        streaming recognition
+        ✓ done
+
+STEP 11 Partial results
+        display live transcript in Overlay
+        ✓ done
+
+STEP 12 TextInjector
+        insert final text into foreground application
+        ✓ done
+
+STEP 13 Model/path handling
+        command line
+        environment variable
+        model discovery
+        ✓ done
+
+STEP 14 Error handling + cleanup
+        orderly shutdown
+        thread ownership
+        resource lifetime
+        ✓ done
+
+STEP 15 Refinement
+        terminology correction
+        formatting model
+        ✓ deterministic customizable Markdown commands implemented
+        custom dictionary / NeMo speech-context biasing
+        ✓ implemented with configurable per-session boost
+        correction memory
+        etc.
+        future work

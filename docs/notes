@@ -1,0 +1,4 @@
+The componentization described by the original notes is now implemented.
+
+See architecture.md for the design, ownership rules, thread model, lifecycle,
+and data flows. See source-map.md for file-by-file responsibilities.

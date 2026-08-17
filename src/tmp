@@ -1,0 +1,1234 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+#include <windows.h>
+#include <audioclient.h>
+#include <ks.h>
+#include <ksmedia.h>
+#include <mmdeviceapi.h>
+#include <mmreg.h>
+#include <shellapi.h>
+#include <wrl/client.h>
+
+#include <algorithm>
+#include <atomic>
+#include <cmath>
+#include <condition_variable>
+#include <cstdint>
+#include <deque>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <limits>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
+
+#include "nemo_speech/asr.h"
+
+using Microsoft::WRL::ComPtr;
+
+namespace {
+
+constexpr wchar_t kMainClass[] = L"NemoSpeechDesktopMain";
+constexpr wchar_t kOverlayClass[] = L"NemoSpeechDesktopOverlay";
+constexpr wchar_t kAppName[] = L"NeMo Speech Desktop";
+constexpr wchar_t kModelFilename[] = L"nemotron-speech-streaming-en-0.6b.q8_0.gguf";
+constexpr UINT kTrayId = 1;
+constexpr UINT kTrayMessage = WM_APP + 1;
+constexpr UINT kModelReady = WM_APP + 2;
+constexpr UINT kModelError = WM_APP + 3;
+constexpr UINT kHotkeyDown = WM_APP + 4;
+constexpr UINT kHotkeyUp = WM_APP + 5;
+constexpr UINT kPartialUpdate = WM_APP + 6;
+constexpr UINT kSessionDone = WM_APP + 7;
+constexpr UINT_PTR kHideOverlayTimer = 1;
+constexpr UINT kExitCommand = 100;
+constexpr DWORD kTriggerKey = VK_F8;
+
+std::wstring
+utf8_to_wide(const std::string& value) {
+    if (value.empty())
+        return {};
+    const int count = MultiByteToWideChar(
+        CP_UTF8, MB_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()), nullptr, 0);
+    if (count <= 0)
+        return L"[invalid UTF-8 transcript]";
+    std::wstring out(static_cast<size_t>(count), L'\0');
+    MultiByteToWideChar(
+        CP_UTF8, MB_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()), out.data(),
+        count);
+    return out;
+}
+
+std::string
+wide_to_utf8(const std::wstring& value) {
+    if (value.empty())
+        return {};
+    const int count = WideCharToMultiByte(
+        CP_UTF8, WC_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()), nullptr, 0,
+        nullptr, nullptr);
+    if (count <= 0)
+        return {};
+    std::string out(static_cast<size_t>(count), '\0');
+    WideCharToMultiByte(
+        CP_UTF8, WC_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()), out.data(),
+        count, nullptr, nullptr);
+    return out;
+}
+
+std::wstring
+format_hresult(const wchar_t* operation, HRESULT hr) {
+    wchar_t code[24] = {};
+    swprintf_s(code, L"0x%08lX", static_cast<unsigned long>(hr));
+    return std::wstring(operation) + L" failed (" + code + L")";
+}
+
+std::wstring
+asr_error(const wchar_t* operation) {
+    const char* detail = nemo_speech_asr_last_error();
+    return std::wstring(operation) + L": " + utf8_to_wide(detail ? detail : "unknown ASR error");
+}
+
+std::wstring
+trim_and_flatten(std::wstring text) {
+    for (wchar_t& c : text) {
+        if (c == L'\r' || c == L'\n' || c == L'\t')
+            c = L' ';
+    }
+    const auto non_space = [](wchar_t c) { return c != L' '; };
+    const auto first = std::find_if(text.begin(), text.end(), non_space);
+    const auto last = std::find_if(text.rbegin(), text.rend(), non_space).base();
+    if (first >= last)
+        return {};
+    text = std::wstring(first, last);
+    std::wstring compact;
+    compact.reserve(text.size());
+    bool previous_space = false;
+    for (wchar_t c : text) {
+        const bool space = c == L' ';
+        if (!space || !previous_space)
+            compact.push_back(c);
+        previous_space = space;
+    }
+    return compact;
+}
+
+std::filesystem::path executable_directory();
+
+std::filesystem::path
+new_debug_wav_path(const std::filesystem::path& directory) {
+    SYSTEMTIME now = {};
+    GetLocalTime(&now);
+    wchar_t stem[80] = {};
+    swprintf_s(
+        stem, L"dictation_%04u%02u%02u_%02u%02u%02u_%03u", now.wYear, now.wMonth,
+        now.wDay, now.wHour, now.wMinute, now.wSecond, now.wMilliseconds);
+    std::filesystem::path candidate = directory / (std::wstring(stem) + L".wav");
+    for (unsigned suffix = 1; std::filesystem::exists(candidate); ++suffix)
+        candidate = directory / (std::wstring(stem) + L"_" + std::to_wstring(suffix) + L".wav");
+    return candidate;
+}
+
+bool
+write_pcm16_wav(
+    const std::filesystem::path& path, const std::vector<float>& samples, int sample_rate,
+    std::wstring& error) {
+    constexpr uint64_t kHeaderOverhead = 36;
+    const uint64_t data_size_64 = samples.size() * sizeof(int16_t);
+    if (sample_rate <= 0 || data_size_64 > std::numeric_limits<uint32_t>::max() - kHeaderOverhead) {
+        error = L"Debug recording is too large for a standard WAV file";
+        return false;
+    }
+    const uint32_t data_size = static_cast<uint32_t>(data_size_64);
+    const uint32_t riff_size = static_cast<uint32_t>(kHeaderOverhead + data_size);
+    const uint16_t pcm = 1;
+    const uint16_t channels = 1;
+    const uint16_t bits = 16;
+    const uint16_t block_align = channels * bits / 8;
+    const uint32_t byte_rate = static_cast<uint32_t>(sample_rate) * block_align;
+    const uint32_t rate = static_cast<uint32_t>(sample_rate);
+
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) {
+        error = L"Could not create debug WAV: " + path.wstring();
+        return false;
+    }
+    output.write("RIFF", 4);
+    output.write(reinterpret_cast<const char*>(&riff_size), sizeof(riff_size));
+    output.write("WAVEfmt ", 8);
+    const uint32_t fmt_size = 16;
+    output.write(reinterpret_cast<const char*>(&fmt_size), sizeof(fmt_size));
+    output.write(reinterpret_cast<const char*>(&pcm), sizeof(pcm));
+    output.write(reinterpret_cast<const char*>(&channels), sizeof(channels));
+    output.write(reinterpret_cast<const char*>(&rate), sizeof(rate));
+    output.write(reinterpret_cast<const char*>(&byte_rate), sizeof(byte_rate));
+    output.write(reinterpret_cast<const char*>(&block_align), sizeof(block_align));
+    output.write(reinterpret_cast<const char*>(&bits), sizeof(bits));
+    output.write("data", 4);
+    output.write(reinterpret_cast<const char*>(&data_size), sizeof(data_size));
+    std::vector<int16_t> pcm_buffer(4096);
+    for (size_t offset = 0; offset < samples.size();) {
+        const size_t count = std::min(pcm_buffer.size(), samples.size() - offset);
+        for (size_t i = 0; i < count; ++i) {
+            const float value = std::clamp(samples[offset + i], -1.0f, 1.0f);
+            pcm_buffer[i] = static_cast<int16_t>(
+                value <= -1.0f ? -32768 : std::lround(value * 32767.0f));
+        }
+        output.write(
+            reinterpret_cast<const char*>(pcm_buffer.data()),
+            static_cast<std::streamsize>(count * sizeof(int16_t)));
+        offset += count;
+    }
+    if (!output) {
+        error = L"Writing debug WAV failed: " + path.wstring();
+        return false;
+    }
+    return true;
+}
+
+bool
+write_utf8_text(const std::filesystem::path& path, const std::string& text, std::wstring& error) {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) {
+        error = L"Could not create offline transcript: " + path.wstring();
+        return false;
+    }
+    output.write(text.data(), static_cast<std::streamsize>(text.size()));
+    if (text.empty() || text.back() != '\n')
+        output.put('\n');
+    if (!output) {
+        error = L"Writing offline transcript failed: " + path.wstring();
+        return false;
+    }
+    return true;
+}
+
+struct SessionResult {
+    std::wstring text;
+    std::wstring error;
+    std::wstring debug_error;
+    std::filesystem::path debug_wav;
+};
+
+class WasapiCapture {
+   public:
+    bool open(std::wstring& error) {
+        HRESULT hr = CoCreateInstance(
+            __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator_));
+        if (FAILED(hr)) {
+            error = format_hresult(L"Creating the audio-device enumerator", hr);
+            return false;
+        }
+        hr = enumerator_->GetDefaultAudioEndpoint(eCapture, eCommunications, &device_);
+        if (FAILED(hr))
+            hr = enumerator_->GetDefaultAudioEndpoint(eCapture, eConsole, &device_);
+        if (FAILED(hr)) {
+            error = format_hresult(L"Opening the default microphone", hr);
+            return false;
+        }
+        hr = device_->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, &client_);
+        if (FAILED(hr)) {
+            error = format_hresult(L"Activating the microphone", hr);
+            return false;
+        }
+        hr = client_->GetMixFormat(&format_);
+        if (FAILED(hr) || !format_) {
+            error = format_hresult(L"Reading the microphone format", hr);
+            return false;
+        }
+        if (!classify_format(error))
+            return false;
+
+        event_.reset(CreateEventW(nullptr, FALSE, FALSE, nullptr));
+        if (!event_) {
+            error = L"Creating the microphone event failed";
+            return false;
+        }
+        const DWORD flags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK | AUDCLNT_STREAMFLAGS_NOPERSIST;
+        hr = client_->Initialize(AUDCLNT_SHAREMODE_SHARED, flags, 0, 0, format_, nullptr);
+        if (FAILED(hr)) {
+            error = format_hresult(L"Initializing shared microphone capture", hr);
+            return false;
+        }
+        hr = client_->SetEventHandle(event_.get());
+        if (FAILED(hr)) {
+            error = format_hresult(L"Connecting the microphone event", hr);
+            return false;
+        }
+        hr = client_->GetService(IID_PPV_ARGS(&capture_));
+        if (FAILED(hr)) {
+            error = format_hresult(L"Creating the microphone capture client", hr);
+            return false;
+        }
+        hr = client_->Start();
+        if (FAILED(hr)) {
+            error = format_hresult(L"Starting microphone capture", hr);
+            return false;
+        }
+        started_ = true;
+        return true;
+    }
+
+    ~WasapiCapture() {
+        if (started_)
+            client_->Stop();
+        if (format_)
+            CoTaskMemFree(format_);
+    }
+
+    HANDLE event_handle() const { return event_.get(); }
+    int sample_rate() const { return format_ ? static_cast<int>(format_->nSamplesPerSec) : 0; }
+
+    template <typename Consumer>
+    bool drain(Consumer&& consume, std::wstring& error) {
+        UINT32 packet_frames = 0;
+        HRESULT hr = capture_->GetNextPacketSize(&packet_frames);
+        if (FAILED(hr)) {
+            error = format_hresult(L"Reading the microphone packet size", hr);
+            return false;
+        }
+        while (packet_frames > 0) {
+            BYTE* data = nullptr;
+            UINT32 frames = 0;
+            DWORD flags = 0;
+            hr = capture_->GetBuffer(&data, &frames, &flags, nullptr, nullptr);
+            if (FAILED(hr)) {
+                error = format_hresult(L"Reading microphone audio", hr);
+                return false;
+            }
+            mono_.assign(frames, 0.0f);
+            if (!(flags & AUDCLNT_BUFFERFLAGS_SILENT) && data)
+                convert_to_mono(data, frames);
+
+            if (flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY)
+                OutputDebugStringW(L"*** AUDIO GLITCH DETECTED ***\n");
+
+            // mono_ owns a converted copy. Release the WASAPI packet before
+            // handing that copy to any downstream code so inference or queue
+            // contention can never extend IAudioCaptureClient buffer ownership.
+            hr = capture_->ReleaseBuffer(frames);
+            if (FAILED(hr)) {
+                error = format_hresult(L"Releasing microphone audio", hr);
+                return false;
+            }
+
+            const bool accepted = consume(mono_);
+            if (!accepted)
+                return false;
+            hr = capture_->GetNextPacketSize(&packet_frames);
+            if (FAILED(hr)) {
+                error = format_hresult(L"Reading the microphone packet size", hr);
+                return false;
+            }
+        }
+        return true;
+    }
+
+   private:
+    struct HandleCloser {
+        void operator()(void* handle) const {
+            if (handle)
+                CloseHandle(static_cast<HANDLE>(handle));
+        }
+    };
+
+    enum class SampleKind { Float32, Pcm16, Pcm24, Pcm32 };
+
+    bool classify_format(std::wstring& error) {
+        WORD tag = format_->wFormatTag;
+        if (tag == WAVE_FORMAT_EXTENSIBLE && format_->cbSize >= 22) {
+            const auto* ext = reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(format_);
+            if (ext->SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT)
+                tag = WAVE_FORMAT_IEEE_FLOAT;
+            else if (ext->SubFormat == KSDATAFORMAT_SUBTYPE_PCM)
+                tag = WAVE_FORMAT_PCM;
+        }
+        if (tag == WAVE_FORMAT_IEEE_FLOAT && format_->wBitsPerSample == 32)
+            kind_ = SampleKind::Float32;
+        else if (tag == WAVE_FORMAT_PCM && format_->wBitsPerSample == 16)
+            kind_ = SampleKind::Pcm16;
+        else if (tag == WAVE_FORMAT_PCM && format_->wBitsPerSample == 24)
+            kind_ = SampleKind::Pcm24;
+        else if (tag == WAVE_FORMAT_PCM && format_->wBitsPerSample == 32)
+            kind_ = SampleKind::Pcm32;
+        else {
+            error = L"The default microphone uses an unsupported shared-mode sample format";
+            return false;
+        }
+        if (format_->nChannels == 0 || format_->nSamplesPerSec < 8000 ||
+            format_->nSamplesPerSec > 96000) {
+            error = L"The default microphone format is outside NeMo's supported 8-96 kHz range";
+            return false;
+        }
+        return true;
+    }
+
+    float read_sample(const BYTE* sample) const {
+        switch (kind_) {
+            case SampleKind::Float32:
+                return *reinterpret_cast<const float*>(sample);
+            case SampleKind::Pcm16:
+                return static_cast<float>(*reinterpret_cast<const int16_t*>(sample)) / 32768.0f;
+            case SampleKind::Pcm24: {
+                int32_t value = static_cast<int32_t>(sample[0]) |
+                                (static_cast<int32_t>(sample[1]) << 8) |
+                                (static_cast<int32_t>(sample[2]) << 16);
+                if (value & 0x00800000)
+                    value |= static_cast<int32_t>(0xFF000000);
+                return static_cast<float>(value) / 8388608.0f;
+            }
+            case SampleKind::Pcm32:
+                return static_cast<float>(*reinterpret_cast<const int32_t*>(sample)) / 2147483648.0f;
+        }
+        return 0.0f;
+    }
+
+    void convert_to_mono(const BYTE* data, UINT32 frames) {
+        const UINT32 channels = format_->nChannels;
+        const UINT32 bytes_per_sample = format_->wBitsPerSample / 8;
+        for (UINT32 frame = 0; frame < frames; ++frame) {
+            const BYTE* frame_data = data + static_cast<size_t>(frame) * format_->nBlockAlign;
+            float sum = 0.0f;
+            for (UINT32 channel = 0; channel < channels; ++channel)
+                sum += read_sample(frame_data + static_cast<size_t>(channel) * bytes_per_sample);
+            mono_[frame] = std::clamp(sum / static_cast<float>(channels), -1.0f, 1.0f);
+        }
+    }
+
+    ComPtr<IMMDeviceEnumerator> enumerator_;
+    ComPtr<IMMDevice> device_;
+    ComPtr<IAudioClient> client_;
+    ComPtr<IAudioCaptureClient> capture_;
+    std::unique_ptr<void, HandleCloser> event_;
+    WAVEFORMATEX* format_ = nullptr;
+    SampleKind kind_ = SampleKind::Float32;
+    std::vector<float> mono_;
+    bool started_ = false;
+};
+
+// Bounded handoff between the realtime capture thread and the ASR worker. The
+// producer never waits for inference: a sustained three-second backlog fails
+// the session explicitly rather than silently dropping or reordering audio.
+class AudioQueue {
+   public:
+    void start(int sample_rate) {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            sample_rate_ = sample_rate;
+            max_queued_samples_ = static_cast<size_t>(sample_rate) * 3;
+            ready_ = true;
+        }
+        changed_.notify_all();
+    }
+
+    bool wait_until_ready(int& sample_rate, std::wstring& error) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        changed_.wait(lock, [&] { return ready_ || closed_; });
+        if (!ready_) {
+            error = error_.empty() ? L"Microphone capture stopped before initialization" : error_;
+            return false;
+        }
+        sample_rate = sample_rate_;
+        return true;
+    }
+
+    bool push(const std::vector<float>& samples) {
+        if (samples.empty())
+            return true;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (closed_)
+                return false;
+            if (queued_samples_ + samples.size() > max_queued_samples_) {
+                error_ =
+                    L"ASR fell more than three seconds behind microphone capture; audio was not "
+                    L"silently dropped";
+                closed_ = true;
+                OutputDebugStringW(L"*** AUDIO QUEUE OVERFLOW ***\n");
+                changed_.notify_all();
+                return false;
+            }
+            chunks_.push_back(samples);
+            queued_samples_ += samples.size();
+        }
+        changed_.notify_one();
+        return true;
+    }
+
+    bool pop(std::vector<float>& samples) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        changed_.wait(lock, [&] { return !chunks_.empty() || closed_; });
+        if (chunks_.empty())
+            return false;
+        samples = std::move(chunks_.front());
+        chunks_.pop_front();
+        queued_samples_ -= samples.size();
+        return true;
+    }
+
+    void close() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            closed_ = true;
+        }
+        changed_.notify_all();
+    }
+
+    void fail(std::wstring error) {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (error_.empty())
+                error_ = std::move(error);
+            closed_ = true;
+        }
+        changed_.notify_all();
+    }
+
+    std::wstring error() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return error_;
+    }
+
+   private:
+    mutable std::mutex mutex_;
+    std::condition_variable changed_;
+    std::deque<std::vector<float>> chunks_;
+    size_t queued_samples_ = 0;
+    size_t max_queued_samples_ = 0;
+    int sample_rate_ = 0;
+    bool ready_ = false;
+    bool closed_ = false;
+    std::wstring error_;
+};
+
+class App {
+   public:
+    bool initialize(HINSTANCE instance, std::filesystem::path model_path) {
+        instance_ = instance;
+        model_path_ = std::move(model_path);
+        model_path_utf8_ = wide_to_utf8(model_path_.wstring());
+        debug_directory_ = executable_directory() / L"debug";
+        std::error_code directory_error;
+        std::filesystem::create_directories(debug_directory_, directory_error);
+        if (directory_error) {
+            show_fatal(
+                L"Could not create the debug recording directory:\n" + debug_directory_.wstring());
+            return false;
+        }
+        stop_event_.reset(CreateEventW(nullptr, TRUE, FALSE, nullptr));
+        if (!stop_event_)
+            return false;
+
+        WNDCLASSEXW main_class = {};
+        main_class.cbSize = sizeof(main_class);
+        main_class.hInstance = instance_;
+        main_class.lpfnWndProc = &App::window_proc;
+        main_class.lpszClassName = kMainClass;
+        main_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        if (!RegisterClassExW(&main_class) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+            return false;
+
+        WNDCLASSEXW overlay_class = main_class;
+        overlay_class.lpfnWndProc = &App::overlay_proc;
+        overlay_class.lpszClassName = kOverlayClass;
+        overlay_class.hbrBackground = CreateSolidBrush(RGB(28, 30, 34));
+        if (!RegisterClassExW(&overlay_class) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+            return false;
+
+        window_ = CreateWindowExW(
+            0, kMainClass, kAppName, WS_OVERLAPPED, 0, 0, 0, 0, nullptr, nullptr, instance_, this);
+        if (!window_)
+            return false;
+        overlay_ = CreateWindowExW(
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED, kOverlayClass,
+            kAppName, WS_POPUP, 0, 0, 760, 130, window_, nullptr, instance_, this);
+        if (!overlay_)
+            return false;
+        SetLayeredWindowAttributes(overlay_, 0, 242, LWA_ALPHA);
+
+        taskbar_created_ = RegisterWindowMessageW(L"TaskbarCreated");
+        add_tray_icon();
+        update_tray(L"Loading model...", nullptr);
+
+        hook_owner_ = this;
+        keyboard_hook_ = SetWindowsHookExW(WH_KEYBOARD_LL, &App::keyboard_proc, instance_, 0);
+        if (!keyboard_hook_) {
+            show_fatal(L"Could not install the global F8 keyboard hook.");
+            return false;
+        }
+        model_thread_ = std::thread([this] { load_model(); });
+        return true;
+    }
+
+    int run() {
+        MSG message;
+        while (GetMessageW(&message, nullptr, 0, 0) > 0) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        shutdown();
+        return static_cast<int>(message.wParam);
+    }
+
+   private:
+    struct HandleCloser {
+        void operator()(void* handle) const {
+            if (handle)
+                CloseHandle(static_cast<HANDLE>(handle));
+        }
+    };
+
+    void load_model() {
+        nemo_speech_asr_backend_config backend = {};
+        backend.size = sizeof(backend);
+        backend.gpu = -1;
+        nemo_speech_asr_model_config model = {};
+        model.size = sizeof(model);
+        model.path = model_path_utf8_.c_str();
+        nemo_speech_asr_streaming_config streaming = {};
+        streaming.size = sizeof(streaming);
+        streaming.chunk_size = 0.16f;
+        streaming.ctc_left_padding = 1.92f;
+        streaming.ctc_right_padding = 1.92f;
+        streaming.rnnt_right_context = 6;
+        nemo_speech_asr_endpointing_config endpointing = {};
+        endpointing.size = sizeof(endpointing);
+        endpointing.enable = true;
+        endpointing.vad_based = false;
+        endpointing.stop_history_eou_ms = 600;
+        nemo_speech_asr_recognizer_config config = {};
+        config.size = sizeof(config);
+        config.backend = &backend;
+        config.model = &model;
+        config.streaming = &streaming;
+        config.endpointing = &endpointing;
+
+        if (nemo_speech_asr_create(&config, &recognizer_) != NEMO_SPEECH_ASR_OK) {
+            post_model_error(asr_error(L"Loading the ASR model"));
+            return;
+        }
+        if (nemo_speech_asr_warmup(recognizer_) != NEMO_SPEECH_ASR_OK) {
+            post_model_error(asr_error(L"Warming the ASR model"));
+            return;
+        }
+        if (!shutting_down_.load())
+            PostMessageW(window_, kModelReady, 0, 0);
+    }
+
+    void post_model_error(std::wstring message) {
+        if (shutting_down_.load())
+            return;
+        PostMessageW(window_, kModelError, 0, reinterpret_cast<LPARAM>(new std::wstring(std::move(message))));
+    }
+
+    void start_listening() {
+        if (!ready_.load()) {
+            show_overlay(L"Model is still loading. Hold F8 again when the tray says Ready.");
+            SetTimer(window_, kHideOverlayTimer, 2200, nullptr);
+            return;
+        }
+        if (listening_.exchange(true))
+            return;
+        if (session_thread_.joinable())
+            session_thread_.join();
+        ResetEvent(stop_event_.get());
+        target_window_ = GetForegroundWindow();
+        finalizing_.store(false);
+        show_overlay(L"Listening...\nHold F8 while speaking");
+        update_tray(L"Listening - release F8 to insert", nullptr);
+        session_thread_ = std::thread([this] { recognition_session(); });
+    }
+
+    void stop_listening() {
+        if (!listening_.load() || finalizing_.exchange(true))
+            return;
+        show_overlay(overlay_text_.empty() ? L"Finalizing..." : overlay_text_ + L"\n\nFinalizing...");
+        update_tray(L"Finalizing dictation...", nullptr);
+        SetEvent(stop_event_.get());
+    }
+
+    static void append_utterance(std::string& committed, const std::string& text) {
+        if (text.empty())
+            return;
+        if (!committed.empty())
+            committed.push_back(' ');
+        committed += text;
+    }
+
+    void save_debug_artifacts(
+        const std::vector<float>& samples, int sample_rate, SessionResult& outcome) {
+        std::error_code directory_error;
+        std::filesystem::create_directories(debug_directory_, directory_error);
+        if (directory_error) {
+            outcome.debug_error = L"Could not create debug directory: " + debug_directory_.wstring();
+            return;
+        }
+        outcome.debug_wav = new_debug_wav_path(debug_directory_);
+        if (!write_pcm16_wav(outcome.debug_wav, samples, sample_rate, outcome.debug_error))
+            return;
+
+        if (!shutting_down_.load()) {
+            PostMessageW(
+                window_, kPartialUpdate, 0,
+                reinterpret_cast<LPARAM>(new std::wstring(
+                    L"Saved " + outcome.debug_wav.filename().wstring() +
+                    L"\nRunning offline transcription...")));
+        }
+
+        const std::filesystem::path transcript_path =
+            std::filesystem::path(outcome.debug_wav).replace_extension(L".txt");
+        std::string offline_text;
+        if (samples.empty()) {
+            offline_text = "No audio was captured.";
+        } else {
+            nemo_speech_asr_recognition_options offline_options =
+                nemo_speech_asr_recognition_options_default();
+            offline_options.enable_automatic_punctuation = true;
+            nemo_speech_asr_result* offline_result = nullptr;
+            if (nemo_speech_asr_recognize_f32(
+                    recognizer_, &offline_options, samples.data(), samples.size(), sample_rate,
+                    &offline_result) != NEMO_SPEECH_ASR_OK) {
+                outcome.debug_error = asr_error(L"Offline debug transcription");
+                offline_text = "ERROR: " + wide_to_utf8(outcome.debug_error);
+            } else {
+                const char* transcript =
+                    offline_result ? nemo_speech_asr_result_transcript(offline_result, 0) : nullptr;
+                offline_text = transcript ? transcript : "";
+                if (offline_result)
+                    nemo_speech_asr_result_destroy(offline_result);
+            }
+        }
+        std::wstring text_error;
+        if (!write_utf8_text(transcript_path, offline_text, text_error)) {
+            if (!outcome.debug_error.empty())
+                outcome.debug_error += L"; ";
+            outcome.debug_error += text_error;
+        }
+    }
+
+    void capture_audio(AudioQueue& queue) {
+        const HRESULT com_hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        const bool uninitialize_com = SUCCEEDED(com_hr);
+        if (FAILED(com_hr) && com_hr != RPC_E_CHANGED_MODE) {
+            queue.fail(format_hresult(L"Initializing audio COM", com_hr));
+            return;
+        }
+
+        try {
+            auto audio = std::make_unique<WasapiCapture>();
+            std::wstring capture_error;
+            if (!audio->open(capture_error)) {
+                queue.fail(std::move(capture_error));
+                audio.reset();
+                if (uninitialize_com)
+                    CoUninitialize();
+                return;
+            }
+
+            queue.start(audio->sample_rate());
+            HANDLE waits[] = {stop_event_.get(), audio->event_handle()};
+            bool ok = true;
+            auto enqueue = [&](const std::vector<float>& samples) { return queue.push(samples); };
+            while (ok) {
+                const DWORD wait = WaitForMultipleObjects(2, waits, FALSE, INFINITE);
+                if (wait == WAIT_OBJECT_0)
+                    break;
+                if (wait != WAIT_OBJECT_0 + 1) {
+                    capture_error = L"Waiting for microphone audio failed";
+                    ok = false;
+                    break;
+                }
+                ok = audio->drain(enqueue, capture_error);
+            }
+
+            // Key-up can race a packet-ready event. Drain every packet already
+            // available before closing the producer side of the queue.
+            if (ok)
+                ok = audio->drain(enqueue, capture_error);
+            audio.reset();
+
+            if (!ok && !capture_error.empty())
+                queue.fail(std::move(capture_error));
+            else
+                queue.close();
+        }
+        catch (const std::exception& exception) {
+            queue.fail(L"Microphone capture failed: " + utf8_to_wide(exception.what()));
+        }
+        catch (...) {
+            queue.fail(L"Microphone capture failed with an unknown error");
+        }
+
+        if (uninitialize_com)
+            CoUninitialize();
+    }
+
+    void recognition_session() {
+        auto* outcome = new SessionResult;
+        nemo_speech_asr_recognition_options options =
+            nemo_speech_asr_recognition_options_default();
+        options.interim_results = true;
+        options.enable_automatic_punctuation = true;
+        nemo_speech_asr_stream* stream = nullptr;
+        if (nemo_speech_asr_streaming_recognize(recognizer_, &options, &stream) !=
+            NEMO_SPEECH_ASR_OK) {
+            outcome->error = asr_error(L"Creating the recognition stream");
+            finish_session(outcome, false);
+            return;
+        }
+
+        std::string committed;
+        std::string partial;
+        auto publish = [&] {
+            std::string display = committed;
+            if (!partial.empty()) {
+                if (!display.empty())
+                    display.push_back(' ');
+                display += partial;
+            }
+            if (!shutting_down_.load())
+                PostMessageW(
+                    window_, kPartialUpdate, 0,
+                    reinterpret_cast<LPARAM>(new std::wstring(utf8_to_wide(display))));
+        };
+        auto drain_results = [&]() -> bool {
+            nemo_speech_asr_result* result = nullptr;
+            for (;;) {
+                const auto status = nemo_speech_asr_stream_next(stream, &result);
+                if (status != NEMO_SPEECH_ASR_OK) {
+                    outcome->error = asr_error(L"Reading recognition results");
+                    return false;
+                }
+                if (!result)
+                    return true;
+                const char* raw = nemo_speech_asr_result_transcript(result, 0);
+                const std::string text = raw ? raw : "";
+                if (nemo_speech_asr_result_is_final(result)) {
+                    append_utterance(committed, text);
+                    partial.clear();
+                } else {
+                    partial = text;
+                }
+                nemo_speech_asr_result_destroy(result);
+                result = nullptr;
+                publish();
+            }
+        };
+
+        AudioQueue audio_queue;
+        std::thread capture_thread([&] { capture_audio(audio_queue); });
+        int capture_sample_rate = 0;
+        if (!audio_queue.wait_until_ready(capture_sample_rate, outcome->error)) {
+            SetEvent(stop_event_.get());
+            capture_thread.join();
+            nemo_speech_asr_stream_close(stream);
+            finish_session(outcome, false);
+            return;
+        }
+
+        std::vector<float> captured_samples;
+        captured_samples.reserve(static_cast<size_t>(capture_sample_rate) * 30);
+        bool ok = true;
+        std::vector<float> samples;
+        while (audio_queue.pop(samples)) {
+            captured_samples.insert(captured_samples.end(), samples.begin(), samples.end());
+            if (ok) {
+                if (nemo_speech_asr_stream_push_f32(
+                        stream, samples.data(), samples.size(), capture_sample_rate) !=
+                    NEMO_SPEECH_ASR_OK) {
+                    outcome->error = asr_error(L"Sending microphone audio to ASR");
+                    ok = false;
+                    SetEvent(stop_event_.get());
+                } else if (!drain_results()) {
+                    ok = false;
+                    SetEvent(stop_event_.get());
+                }
+            }
+            samples.clear();
+        }
+        capture_thread.join();
+        const std::wstring capture_error = audio_queue.error();
+        if (ok && !capture_error.empty()) {
+            outcome->error = capture_error;
+            ok = false;
+        }
+
+        if (ok) {
+            if (nemo_speech_asr_stream_finish(stream) != NEMO_SPEECH_ASR_OK) {
+                outcome->error = asr_error(L"Finalizing recognition");
+                ok = false;
+            } else {
+                ok = drain_results();
+            }
+        }
+        nemo_speech_asr_stream_close(stream);
+        outcome->text = utf8_to_wide(committed);
+        save_debug_artifacts(captured_samples, capture_sample_rate, *outcome);
+        finish_session(outcome, ok);
+    }
+
+    void finish_session(SessionResult* result, bool ok) {
+        if (!ok && result->error.empty())
+            result->error = L"Dictation failed";
+        if (shutting_down_.load()) {
+            delete result;
+            return;
+        }
+        PostMessageW(window_, kSessionDone, 0, reinterpret_cast<LPARAM>(result));
+    }
+
+    void handle_session_done(std::unique_ptr<SessionResult> result) {
+        listening_.store(false);
+        finalizing_.store(false);
+        update_tray(ready_.load() ? L"Ready - hold F8 to dictate" : L"Not ready", nullptr);
+        if (!result->error.empty()) {
+            show_overlay(L"Dictation error:\n" + result->error);
+            update_tray(L"Dictation error", result->error.c_str());
+            SetTimer(window_, kHideOverlayTimer, 5000, nullptr);
+            return;
+        }
+        std::wstring text = trim_and_flatten(std::move(result->text));
+        if (text.empty()) {
+            show_overlay(
+                result->debug_error.empty() ? L"No speech detected"
+                                            : L"No speech detected\n\nDebug error: " + result->debug_error);
+            SetTimer(window_, kHideOverlayTimer, 1400, nullptr);
+            return;
+        }
+        if (!IsWindow(target_window_) || GetForegroundWindow() != target_window_) {
+            show_overlay(L"Target changed; text was not inserted:\n" + text);
+            update_tray(L"Text not inserted: target changed", L"Return to the target and dictate again.");
+            SetTimer(window_, kHideOverlayTimer, 7000, nullptr);
+            return;
+        }
+        text.push_back(L' ');
+        if (!inject_text(text)) {
+            show_overlay(L"Windows did not accept the text input:\n" + text);
+            update_tray(L"Text injection failed", L"Elevated applications cannot accept input from a normal app.");
+            SetTimer(window_, kHideOverlayTimer, 7000, nullptr);
+            return;
+        }
+        hide_overlay();
+        if (!result->debug_error.empty())
+            update_tray(L"Ready - debug artifact warning", result->debug_error.c_str());
+    }
+
+    bool inject_text(const std::wstring& text) {
+        std::vector<INPUT> inputs;
+        inputs.reserve(text.size() * 2);
+        for (wchar_t c : text) {
+            INPUT down = {};
+            down.type = INPUT_KEYBOARD;
+            down.ki.wScan = c;
+            down.ki.dwFlags = KEYEVENTF_UNICODE;
+            INPUT up = down;
+            up.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+            inputs.push_back(down);
+            inputs.push_back(up);
+        }
+        return !inputs.empty() &&
+               SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT)) ==
+                   inputs.size();
+    }
+
+    void show_overlay(const std::wstring& text) {
+        overlay_text_ = text;
+        RECT work = {};
+        SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+        constexpr int width = 760;
+        constexpr int height = 130;
+        const int x = work.left + ((work.right - work.left) - width) / 2;
+        const int y = work.bottom - height - 36;
+        SetWindowPos(
+            overlay_, HWND_TOPMOST, x, y, width, height,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        InvalidateRect(overlay_, nullptr, TRUE);
+    }
+
+    void hide_overlay() {
+        KillTimer(window_, kHideOverlayTimer);
+        ShowWindow(overlay_, SW_HIDE);
+        overlay_text_.clear();
+    }
+
+    void add_tray_icon() {
+        tray_ = {};
+        tray_.cbSize = sizeof(tray_);
+        tray_.hWnd = window_;
+        tray_.uID = kTrayId;
+        tray_.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+        tray_.uCallbackMessage = kTrayMessage;
+        tray_.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+        wcscpy_s(tray_.szTip, L"NeMo Speech Desktop - Loading");
+        Shell_NotifyIconW(NIM_ADD, &tray_);
+    }
+
+    void update_tray(const wchar_t* tooltip, const wchar_t* balloon) {
+        tray_.uFlags = NIF_TIP;
+        wcsncpy_s(tray_.szTip, tooltip, _TRUNCATE);
+        if (balloon && *balloon) {
+            tray_.uFlags |= NIF_INFO;
+            wcsncpy_s(tray_.szInfoTitle, kAppName, _TRUNCATE);
+            wcsncpy_s(tray_.szInfo, balloon, _TRUNCATE);
+            tray_.dwInfoFlags = NIIF_WARNING;
+        } else {
+            tray_.szInfo[0] = L'\0';
+        }
+        Shell_NotifyIconW(NIM_MODIFY, &tray_);
+    }
+
+    void show_tray_menu() {
+        POINT point;
+        GetCursorPos(&point);
+        HMENU menu = CreatePopupMenu();
+        AppendMenuW(menu, MF_STRING | MF_DISABLED, 0, ready_.load() ? L"Ready - hold F8" : L"Loading model...");
+        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(menu, MF_STRING, kExitCommand, L"Exit");
+        SetForegroundWindow(window_);
+        TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, point.x, point.y, 0, window_, nullptr);
+        DestroyMenu(menu);
+    }
+
+    void show_fatal(const std::wstring& text) {
+        MessageBoxW(nullptr, text.c_str(), kAppName, MB_OK | MB_ICONERROR);
+    }
+
+    void shutdown() {
+        if (shutting_down_.exchange(true))
+            return;
+        SetEvent(stop_event_.get());
+        if (keyboard_hook_) {
+            UnhookWindowsHookEx(keyboard_hook_);
+            keyboard_hook_ = nullptr;
+        }
+        hook_owner_ = nullptr;
+        if (session_thread_.joinable())
+            session_thread_.join();
+        if (model_thread_.joinable())
+            model_thread_.join();
+        if (recognizer_) {
+            nemo_speech_asr_destroy(recognizer_);
+            recognizer_ = nullptr;
+        }
+        Shell_NotifyIconW(NIM_DELETE, &tray_);
+    }
+
+    static LRESULT CALLBACK keyboard_proc(int code, WPARAM message, LPARAM data) {
+        if (code == HC_ACTION && hook_owner_) {
+            const auto* key = reinterpret_cast<const KBDLLHOOKSTRUCT*>(data);
+            if (key->vkCode == kTriggerKey && !(key->flags & LLKHF_INJECTED)) {
+                const bool down = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
+                const bool up = message == WM_KEYUP || message == WM_SYSKEYUP;
+                if (down && !hook_owner_->trigger_down_.exchange(true))
+                    PostMessageW(hook_owner_->window_, kHotkeyDown, 0, 0);
+                else if (up && hook_owner_->trigger_down_.exchange(false))
+                    PostMessageW(hook_owner_->window_, kHotkeyUp, 0, 0);
+                return 1;
+            }
+        }
+        return CallNextHookEx(nullptr, code, message, data);
+    }
+
+    static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+        App* app = reinterpret_cast<App*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+        if (message == WM_NCCREATE) {
+            const auto* create = reinterpret_cast<const CREATESTRUCTW*>(lparam);
+            app = static_cast<App*>(create->lpCreateParams);
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(app));
+        }
+        if (!app)
+            return DefWindowProcW(window, message, wparam, lparam);
+        if (message == app->taskbar_created_) {
+            app->add_tray_icon();
+            app->update_tray(app->ready_.load() ? L"Ready - hold F8 to dictate" : L"Loading model...", nullptr);
+            return 0;
+        }
+        switch (message) {
+            case kModelReady:
+                app->ready_.store(true);
+                app->update_tray(L"Ready - hold F8 to dictate", nullptr);
+                return 0;
+            case kModelError: {
+                std::unique_ptr<std::wstring> error(reinterpret_cast<std::wstring*>(lparam));
+                app->update_tray(L"Model load failed", error->c_str());
+                app->show_overlay(L"Model load failed:\n" + *error);
+                return 0;
+            }
+            case kHotkeyDown:
+                app->start_listening();
+                return 0;
+            case kHotkeyUp:
+                app->stop_listening();
+                return 0;
+            case kPartialUpdate: {
+                std::unique_ptr<std::wstring> text(reinterpret_cast<std::wstring*>(lparam));
+                if (app->listening_.load())
+                    app->show_overlay(text->empty() ? L"Listening..." : *text);
+                return 0;
+            }
+            case kSessionDone:
+                app->handle_session_done(
+                    std::unique_ptr<SessionResult>(reinterpret_cast<SessionResult*>(lparam)));
+                return 0;
+            case WM_TIMER:
+                if (wparam == kHideOverlayTimer)
+                    app->hide_overlay();
+                return 0;
+            case kTrayMessage:
+                if (lparam == WM_RBUTTONUP || lparam == WM_CONTEXTMENU || lparam == WM_LBUTTONUP)
+                    app->show_tray_menu();
+                return 0;
+            case WM_COMMAND:
+                if (LOWORD(wparam) == kExitCommand) {
+                    app->shutdown();
+                    DestroyWindow(window);
+                }
+                return 0;
+            case WM_DESTROY:
+                PostQuitMessage(0);
+                return 0;
+            default:
+                return DefWindowProcW(window, message, wparam, lparam);
+        }
+    }
+
+    static LRESULT CALLBACK overlay_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+        App* app = reinterpret_cast<App*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+        if (message == WM_NCCREATE) {
+            const auto* create = reinterpret_cast<const CREATESTRUCTW*>(lparam);
+            app = static_cast<App*>(create->lpCreateParams);
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(app));
+        }
+        if (message == WM_NCHITTEST)
+            return HTTRANSPARENT;
+        if (message == WM_ERASEBKGND)
+            return 1;
+        if (message == WM_PAINT && app) {
+            PAINTSTRUCT paint;
+            HDC dc = BeginPaint(window, &paint);
+            RECT rect;
+            GetClientRect(window, &rect);
+            HBRUSH background = CreateSolidBrush(RGB(28, 30, 34));
+            FillRect(dc, &rect, background);
+            DeleteObject(background);
+            SetBkMode(dc, TRANSPARENT);
+            SetTextColor(dc, RGB(245, 247, 250));
+            HFONT font = CreateFontW(
+                22, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+            HGDIOBJ old_font = SelectObject(dc, font);
+            InflateRect(&rect, -22, -18);
+            DrawTextW(
+                dc, app->overlay_text_.c_str(), static_cast<int>(app->overlay_text_.size()), &rect,
+                DT_LEFT | DT_VCENTER | DT_WORDBREAK | DT_END_ELLIPSIS);
+            SelectObject(dc, old_font);
+            DeleteObject(font);
+            EndPaint(window, &paint);
+            return 0;
+        }
+        return DefWindowProcW(window, message, wparam, lparam);
+    }
+
+    HINSTANCE instance_ = nullptr;
+    HWND window_ = nullptr;
+    HWND overlay_ = nullptr;
+    HWND target_window_ = nullptr;
+    HHOOK keyboard_hook_ = nullptr;
+    NOTIFYICONDATAW tray_ = {};
+    UINT taskbar_created_ = 0;
+    std::filesystem::path model_path_;
+    std::filesystem::path debug_directory_;
+    std::string model_path_utf8_;
+    std::wstring overlay_text_;
+    nemo_speech_asr_recognizer* recognizer_ = nullptr;
+    std::unique_ptr<void, HandleCloser> stop_event_;
+    std::thread model_thread_;
+    std::thread session_thread_;
+    std::atomic<bool> ready_{false};
+    std::atomic<bool> listening_{false};
+    std::atomic<bool> finalizing_{false};
+    std::atomic<bool> trigger_down_{false};
+    std::atomic<bool> shutting_down_{false};
+    static inline App* hook_owner_ = nullptr;
+};
+
+std::filesystem::path
+executable_directory() {
+    std::wstring buffer(32768, L'\0');
+    const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+    buffer.resize(length);
+    return std::filesystem::path(buffer).parent_path();
+}
+
+std::filesystem::path
+resolve_model(int argc, wchar_t** argv) {
+    for (int i = 1; i < argc; ++i) {
+        if (std::wstring(argv[i]) == L"--model" && i + 1 < argc)
+            return std::filesystem::absolute(argv[++i]);
+        if (argv[i][0] != L'-')
+            return std::filesystem::absolute(argv[i]);
+    }
+    wchar_t environment[32768] = {};
+    const DWORD env_length = GetEnvironmentVariableW(
+        L"NEMO_SPEECH_MODEL", environment, static_cast<DWORD>(std::size(environment)));
+    if (env_length > 0 && env_length < std::size(environment))
+        return std::filesystem::absolute(environment);
+
+    auto search_up = [](std::filesystem::path base) -> std::filesystem::path {
+        for (int depth = 0; depth < 6 && !base.empty(); ++depth) {
+            const auto candidate = base / L"models" / kModelFilename;
+            if (std::filesystem::is_regular_file(candidate))
+                return candidate;
+            const auto parent = base.parent_path();
+            if (parent == base)
+                break;
+            base = parent;
+        }
+        return {};
+    };
+    if (auto found = search_up(executable_directory()); !found.empty())
+        return found;
+    return search_up(std::filesystem::current_path());
+}
+
+}  // namespace
+
+int WINAPI
+wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
+    HANDLE single_instance = CreateMutexW(nullptr, TRUE, L"Local\\NemoSpeechDesktop.PushToTalk");
+    if (!single_instance || GetLastError() == ERROR_ALREADY_EXISTS) {
+        MessageBoxW(nullptr, L"NeMo Speech Desktop is already running.", kAppName, MB_OK | MB_ICONINFORMATION);
+        if (single_instance)
+            CloseHandle(single_instance);
+        return 1;
+    }
+
+    int argc = 0;
+    wchar_t** argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    const std::filesystem::path model = resolve_model(argc, argv);
+    LocalFree(argv);
+    if (model.empty() || !std::filesystem::is_regular_file(model)) {
+        MessageBoxW(
+            nullptr,
+            L"The ASR model was not found.\n\nStart with:\n"
+            L"nemo-speech-desktop.exe --model C:\\path\\to\\model.gguf\n\n"
+            L"You can also set the NEMO_SPEECH_MODEL environment variable.",
+            kAppName, MB_OK | MB_ICONERROR);
+        CloseHandle(single_instance);
+        return 2;
+    }
+
+    App app;
+    if (!app.initialize(instance, model)) {
+        MessageBoxW(nullptr, L"NeMo Speech Desktop could not start.", kAppName, MB_OK | MB_ICONERROR);
+        CloseHandle(single_instance);
+        return 3;
+    }
+    const int result = app.run();
+    CloseHandle(single_instance);
+    return result;
+}

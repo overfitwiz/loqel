@@ -1,0 +1,5 @@
+C:/Users/Admin/Documents/loqel/build/CMakeFiles/nemo_talk_formatter.dir
+C:/Users/Admin/Documents/loqel/build/CMakeFiles/nemo_talk_core.dir
+C:/Users/Admin/Documents/loqel/build/CMakeFiles/speech_app.dir
+C:/Users/Admin/Documents/loqel/build/CMakeFiles/edit_cache.dir
+C:/Users/Admin/Documents/loqel/build/CMakeFiles/rebuild_cache.dir

@@ -1,0 +1,30 @@
+install nemo-speech.cpp
+cmake --install .\NeMo-Speech.cpp\build-cpu-min `
+    --prefix .\NeMo-Speech.cpp\install-cpu-min
+
+Build instructions for nemo-speech.cpp
+cmake -S . -B build-cpu-min -G Ninja `
+  -DCMAKE_BUILD_TYPE=Release `
+  -DCMAKE_C_COMPILER=cl `
+  -DCMAKE_CXX_COMPILER=cl `
+  -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
+  -DVCPKG_TARGET_TRIPLET=x64-windows-static-md `
+  -DGGML_CCACHE=OFF `
+  -DNEMO_SPEECH_GGML_PATCHED=OFF `
+  -DGGML_CUDA=OFF `
+  -DGGML_VULKAN=OFF `
+  -DNEMO_SPEECH_BUILD_ASR=ON `
+  -DNEMO_SPEECH_BUILD_DIAR=OFF `
+  -DNEMO_SPEECH_BUILD_TTS=OFF `
+  -DNEMO_SPEECH_BUILD_NMT=OFF `
+  -DNEMO_SPEECH_BUILD_CLI=OFF `
+  -DNEMO_SPEECH_BUILD_HTTP=OFF `
+  -DNEMO_SPEECH_BUILD_GRPC=OFF `
+  -DNEMO_SPEECH_BUILD_EXAMPLES=OFF `
+  -DNEMO_SPEECH_BUILD_TESTS=OFF `
+  -DNEMO_SPEECH_BUILD_TOOLS=OFF `
+  -DNEMO_SPEECH_WITH_FLASHLIGHT=OFF `
+  -DNEMO_SPEECH_WITH_NORM=OFF
+
+  cmake --build build-cpu-min --parallel 8
+

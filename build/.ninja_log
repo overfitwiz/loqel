@@ -1,0 +1,19 @@
+# ninja log v6
+121	1971	8086685723175901	CMakeFiles/speech_app.dir/src/TrayIcon.cpp.obj	dba578079f9c4e00
+145	1992	8086685723352415	CMakeFiles/speech_app.dir/src/Hotkey.cpp.obj	79936237f80b758b
+39	2016	8086685722351799	CMakeFiles/nemo_talk_core.dir/src/AudioQueue.cpp.obj	770763599cd4d6e7
+8	2182	8086685721979243	CMakeFiles/nemo_talk_formatter.dir/src/MarkdownFormatter.cpp.obj	9fd7966528042ec0
+162	3215	8086685723522152	CMakeFiles/speech_app.dir/src/Overlay.cpp.obj	ed7d0ad6e4ec2cc6
+61	3482	8086685722578381	CMakeFiles/nemo_talk_core.dir/src/AsrEngine.cpp.obj	47386bd6953820ad
+2186	3517	8086685743749828	nemo_talk_formatter.lib	779cef3fc66a53a3
+177	4370	8086685723706216	CMakeFiles/speech_app.dir/src/TextInjector.cpp.obj	602147f78edfaf11
+22	5549	8086685722162234	CMakeFiles/nemo_talk_core.dir/src/core/ApplicationCore.cpp.obj	f66ca66ed1c2b7ee
+82	5790	8086685722750030	CMakeFiles/speech_app.dir/src/main.cpp.obj	a645ff7d5717bd76
+5553	5895	8086685777420619	nemo_talk_core.lib	7af3c5fb2da90e34
+3500	6454	8086685756913811	CMakeFiles/speech_app.dir/src/windows/WindowsText.cpp.obj	e85c89ac3aa65e34
+102	6460	8086685722924494	CMakeFiles/speech_app.dir/src/App.cpp.obj	af871d71e7299eb0
+3218	7599	8086685754099473	CMakeFiles/speech_app.dir/src/AudioCapture.cpp.obj	45a6bf1cce50f9af
+1976	7684	8086685741670020	CMakeFiles/speech_app.dir/src/Paths.cpp.obj	e5c3eceb299adf6
+1996	7792	8086685741882672	CMakeFiles/speech_app.dir/src/FormattingSettings.cpp.obj	83342f8343e50363
+2022	7852	8086685742153500	CMakeFiles/speech_app.dir/src/SettingsWindow.cpp.obj	a3d564c542c8f5f4
+7856	8292	8086685800564272	speech_app.exe	56e8a15696ab2031

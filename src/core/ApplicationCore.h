@@ -1,0 +1,71 @@
+#pragma once
+
+#include <atomic>
+#include <filesystem>
+#include <memory>
+#include <string>
+#include <thread>
+
+#include "ApplicationPlatform.h"
+#include "ApplicationSettings.h"
+#include "AudioCapture.h"
+#include "AsrEngine.h"
+#include "AudioQueue.h"
+#include "MarkdownFormatter.h"
+
+class ApplicationCore {
+public:
+    ApplicationCore(
+        IApplicationPlatform& platform,
+        IAudioCapture& audio_capture
+    );
+
+    ~ApplicationCore();
+
+    bool initialize(
+        const std::filesystem::path& model_path,
+        std::string& error
+    );
+
+    void set_settings(
+        const MarkdownCommands& commands,
+        const CustomDictionarySettings& dictionary,
+        const RecognitionSettings& recognition
+    );
+
+    void start_session();
+    void stop_session();
+    void shutdown();
+
+    bool session_active() const;
+    bool finalizing() const;
+
+private:
+    struct SessionResult {
+        std::string text;
+        std::string error;
+    };
+
+    void consume_audio();
+    void handle_session_done(SessionResult result);
+    void post_session_done(SessionResult result);
+
+    IApplicationPlatform& platform_;
+    IAudioCapture& audio_capture_;
+    AsrEngine asr_;
+
+    MarkdownCommands markdown_commands_ = MarkdownCommands::defaults();
+    MarkdownCommands active_markdown_commands_ = MarkdownCommands::defaults();
+    CustomDictionarySettings custom_dictionary_;
+    CustomDictionarySettings active_custom_dictionary_;
+    RecognitionSettings recognition_settings_;
+    RecognitionSettings active_recognition_settings_;
+
+    std::unique_ptr<AudioQueue> audio_queue_;
+    std::thread consumer_thread_;
+
+    ActiveTarget target_ = 0;
+    bool session_active_ = false;
+    bool finalizing_ = false;
+    std::atomic<bool> shutting_down_{false};
+};
