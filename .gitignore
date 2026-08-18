@@ -1,5 +1,7 @@
 models/
 /build/
+/install/
+/install-*/
 /build-*/
 /dist/
 /NeMo-Speech.cpp/build-cpu-min

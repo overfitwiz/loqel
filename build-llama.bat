@@ -8,15 +8,13 @@ REM ============================================================
 cd /d "%~dp0"
 
 set "ROOT=%~dp0"
-set "NEMO_DIR=%ROOT%NeMo-Speech.cpp"
-set "BUILD_DIR=%ROOT%build\nemo-cpu-min"
-set "INSTALL_DIR=%ROOT%install\nemo-cpu-min"
-
-set "TRIPLET=x64-windows-static-md"
+set "LLAMA_DIR=%ROOT%NeMo-Speech.cpp\llama.cpp"
+set "BUILD_DIR=%ROOT%build\llama-cpu-min"
+set "INSTALL_DIR=%ROOT%install\llama-cpu-min"
 
 echo.
 echo ============================================================
-echo  NeMo-Speech.cpp CPU Build
+echo  llama.cpp CPU Build
 echo ============================================================
 echo.
 
@@ -24,59 +22,16 @@ REM ============================================================
 REM Check source
 REM ============================================================
 
-if not exist "%NEMO_DIR%\CMakeLists.txt" (
-    echo ERROR: NeMo-Speech.cpp not found:
-    echo %NEMO_DIR%
-    exit /b 1
-)
-
-REM ============================================================
-REM Find vcpkg
-REM
-REM Priority:
-REM   1. Existing VCPKG_ROOT environment variable
-REM   2. C:\vcpkg
-REM ============================================================
-
-set "VCPKG_DIR="
-
-if defined VCPKG_ROOT (
-    if exist "%VCPKG_ROOT%\vcpkg.exe" (
-        set "VCPKG_DIR=%VCPKG_ROOT%"
-    )
-)
-
-if not defined VCPKG_DIR (
-    if exist "C:\vcpkg\vcpkg.exe" (
-        set "VCPKG_DIR=C:\vcpkg"
-    )
-)
-
-if not defined VCPKG_DIR (
-    echo ERROR: vcpkg not found.
+if not exist "%LLAMA_DIR%\CMakeLists.txt" (
+    echo ERROR: llama.cpp not found:
+    echo %LLAMA_DIR%
     echo.
-    echo Either:
-    echo   1. Install vcpkg at C:\vcpkg
+    echo Make sure the NeMo-Speech.cpp submodules are initialized:
     echo.
-    echo or:
-    echo.
-    echo   2. Set VCPKG_ROOT to your vcpkg directory.
-    echo.
-    echo Example:
-    echo   set VCPKG_ROOT=C:\dev\vcpkg
+    echo   git submodule update --init --recursive
     echo.
     exit /b 1
 )
-
-if not exist "%VCPKG_DIR%\scripts\buildsystems\vcpkg.cmake" (
-    echo ERROR: vcpkg CMake toolchain not found:
-    echo %VCPKG_DIR%\scripts\buildsystems\vcpkg.cmake
-    exit /b 1
-)
-
-echo vcpkg:
-echo %VCPKG_DIR%\vcpkg.exe
-echo.
 
 REM ============================================================
 REM Find Visual Studio
@@ -103,10 +58,9 @@ if not defined VS_PATH (
 )
 
 REM ============================================================
-REM Find CMake for the NeMo build
+REM Find CMake
 REM
 REM Prefer PATH, then use the copy bundled with Visual Studio.
-REM Keep this independent from the loqel application build cache.
 REM ============================================================
 
 set "CMAKE_EXE="
@@ -141,17 +95,9 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM vcvars may change VCPKG_ROOT.
-REM Force it to the vcpkg installation we detected above.
-set "VCPKG_ROOT=%VCPKG_DIR%"
-
 echo.
 echo MSVC:
 where cl
-echo.
-
-echo vcpkg:
-echo %VCPKG_DIR%\vcpkg.exe
 echo.
 
 REM ============================================================
@@ -180,53 +126,9 @@ echo %NINJA_EXE%
 echo.
 
 if /i "%~1"=="--check-tools" (
-    echo NeMo build tools are available.
+    echo llama.cpp build tools are available.
     exit /b 0
 )
-
-REM ============================================================
-REM Install SentencePiece
-REM
-REM Run FROM the vcpkg directory so a vcpkg.json in the loqel
-REM repository cannot accidentally trigger manifest mode.
-REM ============================================================
-
-echo.
-echo ============================================================
-echo  Installing SentencePiece
-echo ============================================================
-echo.
-
-pushd "%VCPKG_DIR%"
-
-vcpkg.exe install sentencepiece:%TRIPLET%
-
-if errorlevel 1 (
-    popd
-    echo.
-    echo ERROR: Failed to install SentencePiece.
-    exit /b 1
-)
-
-popd
-
-REM ============================================================
-REM Verify SentencePiece
-REM ============================================================
-
-echo.
-echo Checking SentencePiece...
-echo.
-
-if not exist "%VCPKG_DIR%\installed\%TRIPLET%\lib\sentencepiece.lib" (
-    echo ERROR: sentencepiece.lib was not found at:
-    echo %VCPKG_DIR%\installed\%TRIPLET%\lib\sentencepiece.lib
-    echo.
-    exit /b 1
-)
-
-echo Found:
-echo %VCPKG_DIR%\installed\%TRIPLET%\lib\sentencepiece.lib
 
 REM ============================================================
 REM Clean old CMake configuration
@@ -253,33 +155,31 @@ echo ============================================================
 echo.
 
 "%CMAKE_EXE%" ^
-  -S "%NEMO_DIR%" ^
+  -S "%LLAMA_DIR%" ^
   -B "%BUILD_DIR%" ^
   -G Ninja ^
   -DCMAKE_MAKE_PROGRAM="%NINJA_EXE%" ^
   -DCMAKE_BUILD_TYPE=Release ^
   -DCMAKE_C_COMPILER=cl ^
   -DCMAKE_CXX_COMPILER=cl ^
-  -DCMAKE_TOOLCHAIN_FILE="%VCPKG_DIR%\scripts\buildsystems\vcpkg.cmake" ^
-  -DVCPKG_TARGET_TRIPLET=%TRIPLET% ^
-  -DCMAKE_PREFIX_PATH="%VCPKG_DIR%\installed\%TRIPLET%" ^
-  -DSENTENCEPIECE_LIB="%VCPKG_DIR%\installed\%TRIPLET%\lib\sentencepiece.lib" ^
+  -DBUILD_SHARED_LIBS=OFF ^
   -DGGML_CCACHE=OFF ^
-  -DNEMO_SPEECH_GGML_PATCHED=OFF ^
   -DGGML_CUDA=OFF ^
   -DGGML_VULKAN=OFF ^
-  -DNEMO_SPEECH_BUILD_ASR=ON ^
-  -DNEMO_SPEECH_BUILD_DIAR=OFF ^
-  -DNEMO_SPEECH_BUILD_TTS=OFF ^
-  -DNEMO_SPEECH_BUILD_NMT=OFF ^
-  -DNEMO_SPEECH_BUILD_CLI=OFF ^
-  -DNEMO_SPEECH_BUILD_HTTP=OFF ^
-  -DNEMO_SPEECH_BUILD_GRPC=OFF ^
-  -DNEMO_SPEECH_BUILD_EXAMPLES=OFF ^
-  -DNEMO_SPEECH_BUILD_TESTS=OFF ^
-  -DNEMO_SPEECH_BUILD_TOOLS=OFF ^
-  -DNEMO_SPEECH_WITH_FLASHLIGHT=OFF ^
-  -DNEMO_SPEECH_WITH_NORM=OFF
+  -DGGML_OPENMP=OFF ^
+  -DGGML_NATIVE=OFF ^
+  -DLLAMA_BUILD_COMMON=OFF ^
+  -DLLAMA_BUILD_TESTS=OFF ^
+  -DLLAMA_BUILD_EXAMPLES=OFF ^
+  -DLLAMA_BUILD_TOOLS=OFF ^
+  -DLLAMA_BUILD_SERVER=OFF ^
+  -DLLAMA_BUILD_APP=OFF ^
+  -DLLAMA_BUILD_MTMD=OFF ^
+  -DLLAMA_BUILD_UI=OFF ^
+  -DLLAMA_OPENSSL=OFF ^
+  -DLLAMA_SUBPROCESS=OFF ^
+  -DLLAMA_TOOLS_INSTALL=OFF ^
+  -DLLAMA_TESTS_INSTALL=OFF
 
 if errorlevel 1 (
     echo.
@@ -315,7 +215,7 @@ REM ============================================================
 
 echo.
 echo ============================================================
-echo  Installing NeMo-Speech.cpp
+echo  Installing llama.cpp
 echo ============================================================
 echo.
 
