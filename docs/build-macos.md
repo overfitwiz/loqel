@@ -46,15 +46,15 @@ include NeMo implementation headers directly.
 ```bash
 cmake -S . -B build-macos -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DNEMO_TALK_BUILD_APP=OFF \
-  -DNEMO_TALK_BUILD_CORE=ON \
+  -DLOQEL_BUILD_APP=OFF \
+  -DLOQEL_BUILD_CORE=ON \
   -DNEMO_SDK_DIR="$PWD/NeMo-Speech.cpp/install-cpu-min"
 
 cmake --build build-macos
 ctest --test-dir build-macos --output-on-failure
 ```
 
-`NEMO_TALK_BUILD_APP=ON` intentionally fails until the macOS adapter exists.
+`LOQEL_BUILD_APP=ON` intentionally fails until the macOS adapter exists.
 
 ## Desktop adapter work required
 

@@ -111,7 +111,7 @@ std::filesystem::path resolve_model_path(
 ) {
     // 1. Command line:
     //
-    // speech_app.exe --model model.gguf
+    // loqel.exe --model model.gguf
 
     for (
         int i = 1;
@@ -134,7 +134,7 @@ std::filesystem::path resolve_model_path(
 
     // 2. Positional argument:
     //
-    // speech_app.exe model.gguf
+    // loqel.exe model.gguf
 
     for (
         int i = 1;

@@ -9,7 +9,7 @@
 
 namespace {
 
-constexpr wchar_t kWindowClassName[] = L"NeMoTalkMainWindow";
+constexpr wchar_t kWindowClassName[] = L"loqelMainWindow";
 
 UINT message_box_icon(MessageKind kind) {
     switch (kind) {
@@ -62,7 +62,7 @@ bool App::create_window() {
     window_ = CreateWindowExW(
         0,
         kWindowClassName,
-        L"NeMo Talk",
+        L"loqel",
         0,
         0,
         0,
@@ -80,7 +80,7 @@ bool App::create_window() {
 int App::run() {
     if (!create_window()) {
         show_message(
-            "NeMo Talk",
+            "loqel",
             "Could not create the application window.",
             MessageKind::Error
         );
@@ -112,7 +112,7 @@ int App::run() {
 
     if (!tray_icon_.create(window_)) {
         show_message(
-            "NeMo Talk",
+            "loqel",
             "Could not create the notification-area icon.",
             MessageKind::Error
         );
@@ -121,7 +121,7 @@ int App::run() {
 
     if (!overlay_.create(instance_, window_)) {
         show_message(
-            "NeMo Talk",
+            "loqel",
             "Could not create the transcript overlay.",
             MessageKind::Error
         );
@@ -130,7 +130,7 @@ int App::run() {
 
     if (!std::filesystem::is_regular_file(model_path_)) {
         show_message(
-            "NeMo Talk",
+            "loqel",
             "Model not found: " + WindowsText::to_utf8(model_path_.wstring()),
             MessageKind::Error
         );
@@ -145,7 +145,7 @@ int App::run() {
 
     if (!hotkey_.install(instance_, window_, hotkey_settings_)) {
         show_message(
-            "NeMo Talk",
+            "loqel",
             "Could not install the global dictation hotkeys.",
             MessageKind::Error
         );
@@ -322,7 +322,7 @@ LRESULT CALLBACK App::window_proc(
                         app->hotkey_settings_
                     )) {
                     app->show_message(
-                        "NeMo Talk",
+                        "loqel",
                         "Could not open settings.",
                         MessageKind::Error
                     );

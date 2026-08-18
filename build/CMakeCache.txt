@@ -73,7 +73,7 @@ CMAKE_EXPORT_COMPILE_COMMANDS:BOOL=
 CMAKE_FIND_PACKAGE_REDIRECTS_DIR:STATIC=C:/Users/Admin/Documents/loqel/build/CMakeFiles/pkgRedirects
 
 //Install path prefix, prepended onto install directories.
-CMAKE_INSTALL_PREFIX:PATH=C:/Program Files (x86)/NeMoTalk
+CMAKE_INSTALL_PREFIX:PATH=C:/Program Files (x86)/loqel
 
 //Path to a program.
 CMAKE_LINKER:FILEPATH=C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.51.36231/bin/Hostx64/x64/link.exe
@@ -114,7 +114,7 @@ CMAKE_PROJECT_DESCRIPTION:STATIC=
 CMAKE_PROJECT_HOMEPAGE_URL:STATIC=
 
 //Value Computed by CMake
-CMAKE_PROJECT_NAME:STATIC=NeMoTalk
+CMAKE_PROJECT_NAME:STATIC=loqel
 
 //Value Computed by CMake
 CMAKE_PROJECT_SPDX_LICENSE:STATIC=
@@ -200,26 +200,14 @@ LOQEL_BUILD_APP:BOOL=ON
 // Speech SDK)
 LOQEL_BUILD_CORE:BOOL=ON
 
+//Path to a file.
+MSVC_REDIST_DIR:PATH=C:/Program Files/Microsoft Visual Studio/18/Community/VC/Redist/MSVC/14.51.36231
+
 //Installed NeMo Speech SDK prefix for the current platform
 NEMO_SDK_DIR:PATH=C:/Users/Admin/Documents/loqel/NeMo-Speech.cpp/install-cpu-min
 
-//No help, variable specified on the command line.
-NEMO_TALK_BUILD_APP:UNINITIALIZED=ON
-
-//No help, variable specified on the command line.
-NEMO_TALK_BUILD_CORE:UNINITIALIZED=ON
-
 //The directory containing a CMake configuration file for NeMoSpeech.
 NeMoSpeech_DIR:PATH=C:/Users/Admin/Documents/loqel/NeMo-Speech.cpp/install-cpu-min/lib/cmake/NeMoSpeech
-
-//Value Computed by CMake
-NeMoTalk_BINARY_DIR:STATIC=C:/Users/Admin/Documents/loqel/build
-
-//Value Computed by CMake
-NeMoTalk_IS_TOP_LEVEL:STATIC=ON
-
-//Value Computed by CMake
-NeMoTalk_SOURCE_DIR:STATIC=C:/Users/Admin/Documents/loqel
 
 //Automatically copy dependencies into the output directory for
 // executables.
@@ -269,6 +257,15 @@ _VCPKG_INSTALLED_DIR:PATH=C:/vcpkg/installed
 
 //Path to a library.
 _nemo_speech_ASR_library:FILEPATH=C:/Users/Admin/Documents/loqel/NeMo-Speech.cpp/install-cpu-min/lib/nemo_speech_asr_c.lib
+
+//Value Computed by CMake
+loqel_BINARY_DIR:STATIC=C:/Users/Admin/Documents/loqel/build
+
+//Value Computed by CMake
+loqel_IS_TOP_LEVEL:STATIC=ON
+
+//Value Computed by CMake
+loqel_SOURCE_DIR:STATIC=C:/Users/Admin/Documents/loqel
 
 
 ########################
@@ -401,6 +398,8 @@ CMAKE_STATIC_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 CMAKE_TOOLCHAIN_FILE-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_VERBOSE_MAKEFILE
 CMAKE_VERBOSE_MAKEFILE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: MSVC_REDIST_DIR
+MSVC_REDIST_DIR-ADVANCED:INTERNAL=1
 //Install the dependencies listed in your manifest:
 //\n    If this is off, you will have to manually install your dependencies.
 //\n    See https://github.com/microsoft/vcpkg/tree/master/docs/specifications/manifests.md

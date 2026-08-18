@@ -229,7 +229,7 @@ void ApplicationCore::start_session(OutputMode output_mode) {
 
     if (!asr_.loaded()) {
         platform_.show_message(
-            "NeMo Talk",
+            "loqel",
             "The ASR model is not loaded.",
             MessageKind::Error
         );
@@ -532,7 +532,7 @@ void ApplicationCore::handle_session_done(SessionResult result) {
 
     if (!target_ || !platform_.is_target_active(target_)) {
         platform_.show_message(
-            "NeMo Talk",
+            "loqel",
             "The active application changed while dictating, so the text was not inserted.",
             MessageKind::Warning
         );

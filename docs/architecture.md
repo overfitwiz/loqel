@@ -2,7 +2,7 @@
 
 ## Goal
 
-NeMo Talk is split into a platform-neutral dictation core and a native desktop
+loqel is split into a platform-neutral dictation core and a native desktop
 adapter. Windows is currently the only complete adapter. macOS and Ubuntu can
 build the portable code once a native NeMo Speech SDK is installed.
 

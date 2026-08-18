@@ -99,7 +99,7 @@ REM ============================================================
 
 echo.
 echo ========================================
-echo Configuring Loqel
+echo Configuring loqel
 echo ========================================
 echo.
 
@@ -113,8 +113,8 @@ cmake ^
     -DCMAKE_TOOLCHAIN_FILE="%VCPKG_DIR%\scripts\buildsystems\vcpkg.cmake" ^
     -DVCPKG_TARGET_TRIPLET=%TRIPLET% ^
     -DNEMO_SDK_DIR="%NEMO_SDK%" ^
-    -DNEMO_TALK_BUILD_APP=ON ^
-    -DNEMO_TALK_BUILD_CORE=ON ^
+    -DLOQEL_BUILD_APP=ON ^
+    -DLOQEL_BUILD_CORE=ON ^
     -DBUILD_TESTING=OFF
 
 if errorlevel 1 (
@@ -131,7 +131,7 @@ REM ============================================================
 
 echo.
 echo ========================================
-echo Building Loqel
+echo Building loqel
 echo ========================================
 echo.
 
@@ -155,7 +155,7 @@ echo SUCCESS
 echo ========================================
 echo.
 echo Executable:
-echo %CD%\%BUILD_DIR%\speech_app.exe
+echo %CD%\%BUILD_DIR%\loqel.exe
 echo.
 
 endlocal

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.26)
 
-project(NeMoTalk LANGUAGES CXX)
+project(loqel LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -45,7 +45,7 @@ target_include_directories(
     src
 )
 
-if(NEMO_TALK_BUILD_CORE)
+if(LOQEL_BUILD_CORE)
     list(PREPEND CMAKE_PREFIX_PATH "${NEMO_SDK_DIR}")
     find_package(NeMoSpeech REQUIRED COMPONENTS ASR)
 
@@ -84,7 +84,7 @@ if(LOQEL_BUILD_APP)
     enable_language(RC)
 
     add_executable(
-        speech_app
+        loqel
         WIN32
         src/main.cpp
         src/App.cpp
@@ -101,14 +101,14 @@ if(LOQEL_BUILD_APP)
     )
 
     target_include_directories(
-        speech_app
+        loqel
         PRIVATE
         src
         src/core
     )
 
     target_link_libraries(
-        speech_app
+        loqel
         PRIVATE
         loqel_core
         user32
@@ -119,7 +119,7 @@ if(LOQEL_BUILD_APP)
     )
 
     target_compile_definitions(
-        speech_app
+        loqel
         PRIVATE
         UNICODE
         _UNICODE
@@ -130,14 +130,37 @@ if(LOQEL_BUILD_APP)
     # this with an install(CODE) dependency collection step later.
     if(EXISTS "${NEMO_SDK_DIR}/bin")
         add_custom_command(
-            TARGET speech_app
+            TARGET loqel
             POST_BUILD
             COMMAND
                 ${CMAKE_COMMAND} -E copy_directory
                 "${NEMO_SDK_DIR}/bin"
-                "$<TARGET_FILE_DIR:speech_app>"
+                "$<TARGET_FILE_DIR:loqel>"
         )
     endif()
+
+    # A release is a portable directory: the application, the NeMo/ggml
+    # runtime DLLs, the MSVC runtime, and the optional model downloader.
+    install(TARGETS loqel RUNTIME DESTINATION .)
+
+    install(
+        DIRECTORY "${NEMO_SDK_DIR}/bin/"
+        DESTINATION .
+        FILES_MATCHING
+        PATTERN "*.dll"
+    )
+
+    install(FILES download-model.bat DESTINATION .)
+
+    if(EXISTS "${NEMO_SDK_DIR}/share/licenses/nemo-speech")
+        install(
+            DIRECTORY "${NEMO_SDK_DIR}/share/licenses/nemo-speech"
+            DESTINATION licenses
+        )
+    endif()
+
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ".")
+    include(InstallRequiredSystemLibraries)
 endif()
 
 include(CTest)

@@ -39,7 +39,7 @@ bool Overlay::create(
             WS_EX_LAYERED,
 
         kOverlayClassName,
-        L"Speech App",
+        L"loqel",
 
         WS_POPUP,
 

@@ -31,23 +31,6 @@ if not exist "%NEMO_DIR%\CMakeLists.txt" (
 )
 
 REM ============================================================
-REM Check CMake
-REM ============================================================
-
-where cmake >nul 2>&1
-
-if errorlevel 1 (
-    echo ERROR: CMake not found in PATH.
-    echo.
-    echo Install CMake and make sure it is available from the command line.
-    exit /b 1
-)
-
-echo CMake:
-where cmake
-echo.
-
-REM ============================================================
 REM Find vcpkg
 REM
 REM Priority:
@@ -120,6 +103,34 @@ if not defined VS_PATH (
 )
 
 REM ============================================================
+REM Find CMake for the NeMo build
+REM
+REM Prefer PATH, then use the copy bundled with Visual Studio.
+REM Keep this independent from the loqel application build cache.
+REM ============================================================
+
+set "CMAKE_EXE="
+
+for /f "delims=" %%i in ('where cmake.exe 2^>nul') do (
+    if not defined CMAKE_EXE set "CMAKE_EXE=%%i"
+)
+
+if not defined CMAKE_EXE (
+    set "CMAKE_EXE=%VS_PATH%\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
+)
+
+if not exist "%CMAKE_EXE%" (
+    echo ERROR: CMake was not found in PATH or Visual Studio.
+    echo.
+    echo Install the CMake component with the Visual Studio Installer.
+    exit /b 1
+)
+
+echo CMake:
+echo %CMAKE_EXE%
+echo.
+
+REM ============================================================
 REM Initialize MSVC
 REM ============================================================
 
@@ -147,23 +158,36 @@ REM ============================================================
 REM Check Ninja
 REM ============================================================
 
-where ninja >nul 2>&1
+set "NINJA_EXE="
 
-if errorlevel 1 (
-    echo ERROR: Ninja not found in PATH.
+for /f "delims=" %%i in ('where ninja.exe 2^>nul') do (
+    if not defined NINJA_EXE set "NINJA_EXE=%%i"
+)
+
+if not defined NINJA_EXE (
+    set "NINJA_EXE=%VS_PATH%\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
+)
+
+if not exist "%NINJA_EXE%" (
+    echo ERROR: Ninja was not found in PATH or Visual Studio.
     echo.
-    echo Install Ninja and make sure it is available from the command line.
+    echo Install the CMake component with the Visual Studio Installer.
     exit /b 1
 )
 
 echo Ninja:
-where ninja
+echo %NINJA_EXE%
 echo.
+
+if /i "%~1"=="--check-tools" (
+    echo NeMo build tools are available.
+    exit /b 0
+)
 
 REM ============================================================
 REM Install SentencePiece
 REM
-REM Run FROM the vcpkg directory so a vcpkg.json in the Loqel
+REM Run FROM the vcpkg directory so a vcpkg.json in the loqel
 REM repository cannot accidentally trigger manifest mode.
 REM ============================================================
 
@@ -228,10 +252,11 @@ echo  Configuring
 echo ============================================================
 echo.
 
-cmake ^
+"%CMAKE_EXE%" ^
   -S "%NEMO_DIR%" ^
   -B "%BUILD_DIR%" ^
   -G Ninja ^
+  -DCMAKE_MAKE_PROGRAM="%NINJA_EXE%" ^
   -DCMAKE_BUILD_TYPE=Release ^
   -DCMAKE_C_COMPILER=cl ^
   -DCMAKE_CXX_COMPILER=cl ^
@@ -274,7 +299,7 @@ echo  Building
 echo ============================================================
 echo.
 
-cmake --build "%BUILD_DIR%" --parallel
+"%CMAKE_EXE%" --build "%BUILD_DIR%" --parallel
 
 if errorlevel 1 (
     echo.
@@ -294,7 +319,7 @@ echo  Installing NeMo-Speech.cpp
 echo ============================================================
 echo.
 
-cmake --install "%BUILD_DIR%" --prefix "%INSTALL_DIR%"
+"%CMAKE_EXE%" --install "%BUILD_DIR%" --prefix "%INSTALL_DIR%"
 
 if errorlevel 1 (
     echo.

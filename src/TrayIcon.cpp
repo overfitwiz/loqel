@@ -37,7 +37,7 @@ bool TrayIcon::create(HWND window) {
 
     wcscpy_s(
         data_.szTip,
-        L"Loqel"
+        L"loqel"
     );
 
     created_ =

@@ -9,7 +9,7 @@
 namespace {
 
 constexpr wchar_t kAppName[] =
-    L"Speech App";
+    L"loqel";
 
 }
 
@@ -23,7 +23,7 @@ int WINAPI wWinMain(
         CreateMutexW(
             nullptr,
             TRUE,
-            L"Local\\NemoTalk.PushToTalk"
+            L"Local\\loqel.PushToTalk"
         );
 
     if (
@@ -33,7 +33,7 @@ int WINAPI wWinMain(
     ) {
         MessageBoxW(
             nullptr,
-            L"Speech App is already running.",
+            L"loqel is already running.",
             kAppName,
             MB_OK |
                 MB_ICONINFORMATION
@@ -93,7 +93,7 @@ int WINAPI wWinMain(
 
             L"ASR model was not found.\n\n"
             L"Use:\n"
-            L"speech_app.exe --model C:\\path\\model.gguf\n\n"
+            L"loqel.exe --model C:\\path\\model.gguf\n\n"
             L"or set NEMO_SPEECH_MODEL.\n\n"
             L"The app also searches models\\ for:\n"
             L"nemotron-speech-streaming-en-0.6b.q8_0.gguf\n"

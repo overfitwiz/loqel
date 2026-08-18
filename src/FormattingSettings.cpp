@@ -25,7 +25,7 @@ std::filesystem::path settings_path() {
     ) {
         std::filesystem::path path =
             std::filesystem::path(local_app_data) /
-            L"NeMoTalk" /
+            L"loqel" /
             L"settings.ini";
 
         CoTaskMemFree(local_app_data);

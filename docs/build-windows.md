@@ -26,7 +26,7 @@ cmake --build build-windows
 ctest --test-dir build-windows --output-on-failure
 ```
 
-The application is written to `build-windows/speech_app.exe`. CMake copies the
+The application is written to `build-windows/loqel.exe`. CMake copies the
 NeMo runtime DLLs from the SDK's `bin` directory beside the executable.
 
 ## Run
@@ -34,5 +34,5 @@ NeMo runtime DLLs from the SDK's `bin` directory beside the executable.
 Place the model under `models/`, set `NEMO_SPEECH_MODEL`, or pass it explicitly:
 
 ```powershell
-build-windows\speech_app.exe --model C:\path\to\model.gguf
+build-windows\loqel.exe --model C:\path\to\model.gguf
 ```

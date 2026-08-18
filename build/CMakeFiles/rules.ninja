@@ -6,7 +6,7 @@
 # It is included in the main 'build.ninja'.
 
 # =============================================================================
-# Project: NeMoTalk
+# Project: loqel
 # Configurations: Release
 # =============================================================================
 # =============================================================================
@@ -56,7 +56,7 @@ rule CXX_STATIC_LIBRARY_LINKER__loqel_core_Release
 #############################################
 # Rule for compiling CXX files.
 
-rule CXX_COMPILER__speech_app_unscanned_Release
+rule CXX_COMPILER__loqel_unscanned_Release
   deps = msvc
   command = ${LAUNCHER}${CODE_CHECK}C:\PROGRA~1\MIB055~1\18\COMMUN~1\VC\Tools\MSVC\1451~1.362\bin\Hostx64\x64\cl.exe  /nologo /TP $DEFINES $INCLUDES $FLAGS /showIncludes /Fo$out /Fd$TARGET_COMPILE_PDB /FS -c $in
   description = Building CXX object $out
@@ -65,7 +65,7 @@ rule CXX_COMPILER__speech_app_unscanned_Release
 #############################################
 # Rule for compiling RC files.
 
-rule RC_COMPILER__speech_app_unscanned_Release
+rule RC_COMPILER__loqel_unscanned_Release
   depfile = $DEP_FILE
   deps = gcc
   command = C:/PROGRA~1/MIB055~1/18/COMMUN~1/Common7/IDE/COMMON~1/MICROS~1/CMake/CMake/bin/cmcldeps.exe RC $in $DEP_FILE $out "Remarque : inclusion du fichier :  " "cl" ${LAUNCHER}${CODE_CHECK}C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\rc.exe $DEFINES $INCLUDES $FLAGS /fo $out $in
@@ -75,7 +75,7 @@ rule RC_COMPILER__speech_app_unscanned_Release
 #############################################
 # Rule for linking CXX executable.
 
-rule CXX_EXECUTABLE_LINKER__speech_app_Release
+rule CXX_EXECUTABLE_LINKER__loqel_Release
   command = C:\WINDOWS\system32\cmd.exe /C "$PRE_LINK && "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -E vs_link_exe --msvc-ver=1951 --intdir=$OBJECT_DIR --rc=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\rc.exe --mt=C:\PROGRA~2\WI3CF2~1\10\bin\100261~1.0\x64\mt.exe --manifests $MANIFESTS -- C:\PROGRA~1\MIB055~1\18\COMMUN~1\VC\Tools\MSVC\1451~1.362\bin\Hostx64\x64\link.exe /nologo $in  /out:$TARGET_FILE /implib:$TARGET_IMPLIB /pdb:$TARGET_PDB /version:0.0 $LINK_FLAGS $LINK_PATH $LINK_LIBRARIES && $POST_BUILD"
   description = Linking CXX executable $TARGET_FILE
   restat = $RESTAT

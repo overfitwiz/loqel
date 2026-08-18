@@ -1,6 +1,6 @@
-# NeMo Talk
+# loqel
 
-NeMo Talk is a local push-to-talk dictation application. The complete desktop
+loqel is a local push-to-talk dictation application. The complete desktop
 adapter currently targets Windows: hold F8 to
 capture microphone audio, watch the live transcript in a non-activating overlay,
 and release F8 to finalize recognition and insert the text into the application
@@ -36,9 +36,24 @@ desktop and microphone adapters. There is no web or service layer.
 - [Implementation plan](docs/plan) records the original incremental development
   sequence.
 
+## Portable Windows release
+
+After running `build-app.bat`, run `package-release.bat`. It creates a minimal
+portable `dist\` directory containing the application, runtime DLLs, license
+notices, and `download-model.bat`. Distribute the contents of that directory
+(or zip it). Users run `download-model.bat` once and then `loqel.exe`.
+
+The model is deliberately downloaded separately and is not included in the
+release directory.
+
 ## Scope
 
 The app-owned implementation is in `src/`; portable interfaces and orchestration
 are in `src/core/`, and Windows boundary helpers are in `src/windows/`.
-`NeMo-Speech.cpp/` is the upstream speech SDK source tree. NeMo Talk consumes
+`NeMo-Speech.cpp/` is the upstream speech SDK source tree. loqel consumes
 its installed public C API and CMake target rather than SDK internals.
+
+
+## License
+
+Loqel is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.

@@ -11,7 +11,7 @@
 namespace {
 
 constexpr wchar_t kSettingsClassName[] =
-    L"NeMoTalkFormattingSettingsWindow";
+    L"loqelFormattingSettingsWindow";
 
 constexpr int kSaveButton = 2001;
 constexpr int kCancelButton = 2002;
@@ -148,7 +148,7 @@ bool SettingsWindow::create(
     window_ = CreateWindowExW(
         WS_EX_TOOLWINDOW,
         kSettingsClassName,
-        L"NeMo Talk — Settings",
+        L"loqel — Settings",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
@@ -567,7 +567,7 @@ LRESULT CALLBACK SettingsWindow::window_proc(
             settings->brand_label_ = CreateWindowExW(
                 0,
                 L"STATIC",
-                L"NeMo Talk",
+                L"loqel",
                 WS_CHILD | WS_VISIBLE,
                 24,
                 24,

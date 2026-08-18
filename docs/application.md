@@ -1,8 +1,8 @@
-# Using NeMo Talk
+# Using loqel
 
 ## Purpose
 
-NeMo Talk turns a held F8 keypress into text in the current Windows application.
+loqel turns a held F8 keypress into text in the current Windows application.
 Recognition is performed locally with the configured NeMo Speech model.
 
 The application has no normal taskbar window. Its persistent UI is a system tray
@@ -12,7 +12,7 @@ icon, and its temporary UI is an overlay near the bottom of the working area.
 
 Only one instance may run in a Windows login session. On startup, the program:
 
-1. Acquires the `Local\\NemoTalk.PushToTalk` mutex.
+1. Acquires the `Local\\loqel.PushToTalk` mutex.
 2. Resolves the ASR model path.
 3. Creates a hidden application window, tray icon, and overlay.
 4. Loads the ASR model on the main thread.
@@ -133,7 +133,7 @@ the completed recording as a whole.
 Settings are persisted to:
 
 ```text
-%LOCALAPPDATA%\NeMoTalk\settings.ini
+%LOCALAPPDATA%\loqel\settings.ini
 ```
 
 ## Text insertion safety
