@@ -1,8 +1,0 @@
-C:/Users/Admin/Documents/loqel/build/CMakeFiles/loqel_formatter.dir
-C:/Users/Admin/Documents/loqel/build/CMakeFiles/loqel_core.dir
-C:/Users/Admin/Documents/loqel/build/CMakeFiles/loqel.dir
-C:/Users/Admin/Documents/loqel/build/CMakeFiles/edit_cache.dir
-C:/Users/Admin/Documents/loqel/build/CMakeFiles/rebuild_cache.dir
-C:/Users/Admin/Documents/loqel/build/CMakeFiles/list_install_components.dir
-C:/Users/Admin/Documents/loqel/build/CMakeFiles/install.dir
-C:/Users/Admin/Documents/loqel/build/CMakeFiles/install/local.dir
