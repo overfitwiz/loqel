@@ -1,6 +1,6 @@
 install nemo-speech.cpp
 cmake --install .\NeMo-Speech.cpp\build-cpu-min `
-    --prefix .\NeMo-Speech.cpp\install-cpu-min
+    --prefix .\install\nemo-cpu-min
 
 Build instructions for nemo-speech.cpp
 cmake -S . -B build-cpu-min -G Ninja `

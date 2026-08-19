@@ -5,7 +5,8 @@ REM Always switch to the directory containing this BAT.
 cd /d "%~dp0"
 
 set "BUILD_DIR=build"
-set "NEMO_SDK=NeMo-Speech.cpp\install-cpu-min"
+set "NEMO_SDK=install\nemo-cpu-min"
+set "LLAMA_SDK=install\llama-cpu-min"
 set "TRIPLET=x64-windows-static-md"
 
 REM ============================================================
@@ -79,6 +80,14 @@ if not exist "%NEMO_SDK%" (
     exit /b 1
 )
 
+if not exist "%LLAMA_SDK%\lib\cmake\llama\llama-config.cmake" (
+    echo ERROR: llama.cpp SDK not found:
+    echo %CD%\%LLAMA_SDK%
+    echo.
+    echo Run build-llama.bat first.
+    exit /b 1
+)
+
 where cmake >nul 2>&1
 
 if errorlevel 1 (
@@ -113,6 +122,7 @@ cmake ^
     -DCMAKE_TOOLCHAIN_FILE="%VCPKG_DIR%\scripts\buildsystems\vcpkg.cmake" ^
     -DVCPKG_TARGET_TRIPLET=%TRIPLET% ^
     -DNEMO_SDK_DIR="%NEMO_SDK%" ^
+    -DLLAMA_SDK_DIR="%LLAMA_SDK%" ^
     -DLOQEL_BUILD_APP=ON ^
     -DLOQEL_BUILD_CORE=ON ^
     -DBUILD_TESTING=OFF

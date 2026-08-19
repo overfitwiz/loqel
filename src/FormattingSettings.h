@@ -16,6 +16,7 @@ public:
         CustomDictionarySettings& dictionary,
         RecognitionSettings& recognition,
         CleanupSettings& cleanup,
+        LlmSettings& llm,
         HotkeySettings& hotkeys,
         std::string& error
     ) const;
@@ -25,6 +26,7 @@ public:
         const CustomDictionarySettings& dictionary,
         const RecognitionSettings& recognition,
         const CleanupSettings& cleanup,
+        const LlmSettings& llm,
         const HotkeySettings& hotkeys,
         std::string& error
     ) const;

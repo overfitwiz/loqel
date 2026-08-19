@@ -28,10 +28,12 @@ UINT message_box_icon(MessageKind kind) {
 
 App::App(
     HINSTANCE instance,
-    std::filesystem::path model_path
+    std::filesystem::path model_path,
+    std::filesystem::path llm_model_path
 )
     : instance_(instance),
       model_path_(std::move(model_path)),
+      llm_model_path_(std::move(llm_model_path)),
       core_(*this, audio_capture_) {
 }
 
@@ -93,6 +95,7 @@ int App::run() {
             custom_dictionary_,
             recognition_settings_,
             cleanup_settings_,
+            llm_settings_,
             hotkey_settings_,
             settings_error
         )) {
@@ -107,7 +110,8 @@ int App::run() {
         markdown_commands_,
         custom_dictionary_,
         recognition_settings_,
-        cleanup_settings_
+        cleanup_settings_,
+        llm_settings_
     );
 
     if (!tray_icon_.create(window_)) {
@@ -138,8 +142,8 @@ int App::run() {
     }
 
     std::string asr_error;
-    if (!core_.initialize(model_path_, asr_error)) {
-        show_message("Could not load NeMo", asr_error, MessageKind::Error);
+    if (!core_.initialize(model_path_, llm_model_path_, asr_error)) {
+        show_message("Could not load models", asr_error, MessageKind::Error);
         return 5;
     }
 
@@ -319,6 +323,7 @@ LRESULT CALLBACK App::window_proc(
                         app->custom_dictionary_,
                         app->recognition_settings_,
                         app->cleanup_settings_,
+                        app->llm_settings_,
                         app->hotkey_settings_
                     )) {
                     app->show_message(
@@ -341,13 +346,15 @@ LRESULT CALLBACK App::window_proc(
             app->custom_dictionary_ = app->settings_window_.dictionary();
             app->recognition_settings_ = app->settings_window_.recognition();
             app->cleanup_settings_ = app->settings_window_.cleanup();
+            app->llm_settings_ = app->settings_window_.llm();
             app->hotkey_settings_ = app->settings_window_.hotkeys();
             app->hotkey_.configure(app->hotkey_settings_);
             app->core_.set_settings(
                 app->markdown_commands_,
                 app->custom_dictionary_,
                 app->recognition_settings_,
-                app->cleanup_settings_
+                app->cleanup_settings_,
+                app->llm_settings_
             );
 
             std::string error;
@@ -356,6 +363,7 @@ LRESULT CALLBACK App::window_proc(
                     app->custom_dictionary_,
                     app->recognition_settings_,
                     app->cleanup_settings_,
+                    app->llm_settings_,
                     app->hotkey_settings_,
                     error
                 )) {

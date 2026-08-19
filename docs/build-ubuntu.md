@@ -46,7 +46,7 @@ cmake -S . -B build-ubuntu -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DLOQEL_BUILD_APP=OFF \
   -DLOQEL_BUILD_CORE=ON \
-  -DNEMO_SDK_DIR="$PWD/NeMo-Speech.cpp/install-cpu-min"
+  -DNEMO_SDK_DIR="$PWD/install/nemo-cpu-min"
 
 cmake --build build-ubuntu
 ctest --test-dir build-ubuntu --output-on-failure

@@ -12,9 +12,16 @@ endif()
 
 set(
     NEMO_SDK_DIR
-    "${CMAKE_SOURCE_DIR}/NeMo-Speech.cpp/install-cpu-min"
+    "${CMAKE_SOURCE_DIR}/install/nemo-cpu-min"
     CACHE PATH
     "Installed NeMo Speech SDK prefix for the current platform"
+)
+
+set(
+    LLAMA_SDK_DIR
+    "${CMAKE_SOURCE_DIR}/install/llama-cpu-min"
+    CACHE PATH
+    "Installed llama.cpp SDK prefix for the current platform"
 )
 
 option(
@@ -46,8 +53,9 @@ target_include_directories(
 )
 
 if(LOQEL_BUILD_CORE)
-    list(PREPEND CMAKE_PREFIX_PATH "${NEMO_SDK_DIR}")
+    list(PREPEND CMAKE_PREFIX_PATH "${NEMO_SDK_DIR}" "${LLAMA_SDK_DIR}")
     find_package(NeMoSpeech REQUIRED COMPONENTS ASR)
+    find_package(llama CONFIG REQUIRED)
 
     add_library(
         loqel_core
@@ -55,6 +63,7 @@ if(LOQEL_BUILD_CORE)
         src/core/ApplicationCore.cpp
         src/AudioQueue.cpp
         src/AsrEngine.cpp
+        src/LlmPostprocessor.cpp
     )
 
     target_include_directories(
@@ -69,6 +78,7 @@ if(LOQEL_BUILD_CORE)
         PUBLIC
         loqel_formatter
         NeMoSpeech::ASR
+        llama
     )
 endif()
 
@@ -150,7 +160,7 @@ if(LOQEL_BUILD_APP)
         PATTERN "*.dll"
     )
 
-    install(FILES download-model.bat DESTINATION .)
+    install(FILES download-model.bat download-llm.bat DESTINATION .)
 
     if(EXISTS "${NEMO_SDK_DIR}/share/licenses/nemo-speech")
         install(

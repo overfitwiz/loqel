@@ -12,6 +12,7 @@
 #include "AsrEngine.h"
 #include "AudioQueue.h"
 #include "MarkdownFormatter.h"
+#include "LlmPostprocessor.h"
 
 class ApplicationCore {
 public:
@@ -24,6 +25,7 @@ public:
 
     bool initialize(
         const std::filesystem::path& model_path,
+        const std::filesystem::path& llm_model_path,
         std::string& error
     );
 
@@ -31,7 +33,8 @@ public:
         const MarkdownCommands& commands,
         const CustomDictionarySettings& dictionary,
         const RecognitionSettings& recognition,
-        const CleanupSettings& cleanup
+        const CleanupSettings& cleanup,
+        const LlmSettings& llm
     );
 
     void start_session(OutputMode output_mode);
@@ -54,6 +57,7 @@ private:
     IApplicationPlatform& platform_;
     IAudioCapture& audio_capture_;
     AsrEngine asr_;
+    LlmPostprocessor llm_;
 
     MarkdownCommands markdown_commands_ = MarkdownCommands::defaults();
     MarkdownCommands active_markdown_commands_ = MarkdownCommands::defaults();
@@ -63,6 +67,7 @@ private:
     RecognitionSettings active_recognition_settings_;
     CleanupSettings cleanup_settings_;
     CleanupSettings active_cleanup_settings_;
+    LlmSettings llm_settings_;
     OutputMode active_output_mode_ = OutputMode::Formatted;
 
     std::unique_ptr<AudioQueue> audio_queue_;

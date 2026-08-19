@@ -11,4 +11,9 @@ std::filesystem::path resolve_model_path(
     wchar_t** argv
 );
 
+std::filesystem::path resolve_llm_model_path(
+    int argc,
+    wchar_t** argv
+);
+
 }

@@ -179,25 +179,57 @@ ApplicationCore::~ApplicationCore() {
 
 bool ApplicationCore::initialize(
     const std::filesystem::path& model_path,
+    const std::filesystem::path& llm_model_path,
     std::string& error
 ) {
-    return asr_.load(
-        model_path,
-        rnnt_right_context(recognition_settings_.latency),
-        error
-    );
+    if (!asr_.load(
+            model_path,
+            rnnt_right_context(recognition_settings_.latency),
+            error
+        )) {
+        return false;
+    }
+
+    if (!llm_.initialize(llm_model_path, llm_settings_.enabled, error)) {
+        return false;
+    }
+
+    return true;
 }
 
 void ApplicationCore::set_settings(
     const MarkdownCommands& commands,
     const CustomDictionarySettings& dictionary,
     const RecognitionSettings& recognition,
-    const CleanupSettings& cleanup
+    const CleanupSettings& cleanup,
+    const LlmSettings& llm
 ) {
     markdown_commands_ = commands;
     custom_dictionary_ = dictionary;
     recognition_settings_ = recognition;
     cleanup_settings_ = cleanup;
+    llm_settings_ = llm;
+
+    if (asr_.loaded() && llm_.enabled() != llm.enabled) {
+        platform_.show_overlay(
+            llm.enabled
+                ? "Loading text correction model..."
+                : "Unloading text correction model..."
+        );
+
+        std::string llm_error;
+        const bool ok = llm_.set_enabled(llm.enabled, llm_error);
+        platform_.hide_overlay();
+
+        if (!ok) {
+            llm_settings_.enabled = false;
+            platform_.show_message(
+                "Text correction settings",
+                llm_error,
+                MessageKind::Error
+            );
+        }
+    }
 
     const int right_context = rnnt_right_context(recognition.latency);
     if (
@@ -375,6 +407,13 @@ void ApplicationCore::consume_audio() {
                 active_cleanup_settings_,
                 active_markdown_commands_
             );
+
+            if (
+                !llm_.process(result.text, result.text, result.error) &&
+                result.error.empty()
+            ) {
+                result.error = "LLM text correction failed.";
+            }
         }
 
         post_session_done(std::move(result));
@@ -494,6 +533,14 @@ void ApplicationCore::consume_audio() {
         active_markdown_commands_
     );
 
+    if (
+        result.error.empty() &&
+        !llm_.process(result.text, result.text, result.error) &&
+        result.error.empty()
+    ) {
+        result.error = "LLM text correction failed.";
+    }
+
     post_session_done(std::move(result));
 }
 
@@ -520,7 +567,11 @@ void ApplicationCore::handle_session_done(SessionResult result) {
     platform_.hide_overlay();
 
     if (!result.error.empty()) {
-        platform_.show_message("ASR error", result.error, MessageKind::Error);
+        platform_.show_message(
+            "Dictation error",
+            result.error,
+            MessageKind::Error
+        );
         target_ = 0;
         return;
     }
@@ -570,6 +621,7 @@ void ApplicationCore::shutdown() {
     }
 
     asr_.close_stream();
+    llm_.shutdown();
     audio_queue_.reset();
     session_active_ = false;
     finalizing_ = false;

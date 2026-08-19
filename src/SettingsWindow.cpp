@@ -170,13 +170,14 @@ bool SettingsWindow::show(
     const CustomDictionarySettings& dictionary,
     const RecognitionSettings& recognition,
     const CleanupSettings& cleanup,
+    const LlmSettings& llm,
     const HotkeySettings& hotkeys
 ) {
     if (!window_ && !create(instance, owner)) {
         return false;
     }
 
-    populate(commands, dictionary, recognition, cleanup, hotkeys);
+    populate(commands, dictionary, recognition, cleanup, llm, hotkeys);
     center_on_owner();
 
     ShowWindow(window_, SW_SHOWNORMAL);
@@ -191,12 +192,14 @@ void SettingsWindow::populate(
     const CustomDictionarySettings& dictionary,
     const RecognitionSettings& recognition,
     const CleanupSettings& cleanup,
+    const LlmSettings& llm,
     const HotkeySettings& hotkeys
 ) {
     commands_ = commands;
     dictionary_ = dictionary;
     recognition_ = recognition;
     cleanup_ = cleanup;
+    llm_ = llm;
     hotkeys_ = hotkeys;
 
     for (std::size_t i = 0; i < kMarkdownCommandCount; ++i) {
@@ -248,6 +251,12 @@ void SettingsWindow::populate(
     }
 
     SendMessageW(latency_combo_, CB_SETCURSEL, latency_index, 0);
+    SendMessageW(
+        llm_checkbox_,
+        BM_SETCHECK,
+        llm.enabled ? BST_CHECKED : BST_UNCHECKED,
+        0
+    );
     SendMessageW(
         formatted_hotkey_combo_,
         CB_SETCURSEL,
@@ -383,6 +392,14 @@ void SettingsWindow::save_from_controls() {
     }
 
     HotkeySettings hotkeys;
+    LlmSettings llm;
+    llm.enabled = SendMessageW(
+        llm_checkbox_,
+        BM_GETCHECK,
+        0,
+        0
+    ) == BST_CHECKED;
+
     hotkeys.formatted_function_key =
         static_cast<int>(SendMessageW(
             formatted_hotkey_combo_,
@@ -415,6 +432,7 @@ void SettingsWindow::save_from_controls() {
     dictionary_ = std::move(dictionary);
     recognition_ = recognition;
     cleanup_ = std::move(cleanup);
+    llm_ = llm;
     hotkeys_ = hotkeys;
     ShowWindow(window_, SW_HIDE);
     PostMessageW(owner_, kSavedMessage, 0, 0);
@@ -434,6 +452,10 @@ const RecognitionSettings& SettingsWindow::recognition() const {
 
 const CleanupSettings& SettingsWindow::cleanup() const {
     return cleanup_;
+}
+
+const LlmSettings& SettingsWindow::llm() const {
+    return llm_;
 }
 
 const HotkeySettings& SettingsWindow::hotkeys() const {
@@ -896,10 +918,26 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 reinterpret_cast<LPARAM>(L"Highest accuracy (model context)")
             );
 
+            settings->llm_checkbox_ = CreateWindowExW(
+                0,
+                L"BUTTON",
+                L"Correct final text with the local LLM",
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                450,
+                380,
+                390,
+                28,
+                window,
+                reinterpret_cast<HMENU>(4104),
+                nullptr,
+                nullptr
+            );
+
             SendMessageW(mode_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(settings->mode_combo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(latency_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(settings->latency_combo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            SendMessageW(settings->llm_checkbox_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(language_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(settings->language_combo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(model_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
@@ -912,6 +950,7 @@ LRESULT CALLBACK SettingsWindow::window_proc(
             settings->add_to_tab(GeneralTab, settings->mode_combo_);
             settings->add_to_tab(GeneralTab, latency_label);
             settings->add_to_tab(GeneralTab, settings->latency_combo_);
+            settings->add_to_tab(GeneralTab, settings->llm_checkbox_);
 
             HWND formatted_hotkey_label = CreateWindowExW(
                 0,

@@ -31,7 +31,7 @@ std::filesystem::path make_absolute(
 }
 
 
-std::filesystem::path search_up(
+std::filesystem::path search_asr_up(
     std::filesystem::path directory
 ) {
     for (
@@ -64,6 +64,28 @@ std::filesystem::path search_up(
             break;
         }
 
+        directory = parent;
+    }
+
+    return {};
+}
+
+std::filesystem::path search_llm_up(
+    std::filesystem::path directory
+) {
+    for (int depth = 0; depth < 6 && !directory.empty(); ++depth) {
+        const auto candidate =
+            directory / L"models" / L"LFM2.5-350M-Q8_0.gguf";
+        std::error_code error;
+
+        if (std::filesystem::is_regular_file(candidate, error)) {
+            return candidate;
+        }
+
+        const auto parent = directory.parent_path();
+        if (parent == directory) {
+            break;
+        }
         directory = parent;
     }
 
@@ -142,6 +164,13 @@ std::filesystem::path resolve_model_path(
         ++i
     ) {
         if (
+            i > 1 &&
+            std::wstring(argv[i - 1]) == L"--llm-model"
+        ) {
+            continue;
+        }
+
+        if (
             argv[i][0] != L'-'
         ) {
             return make_absolute(
@@ -188,7 +217,7 @@ std::filesystem::path resolve_model_path(
 
     if (
         auto found =
-            search_up(
+            search_asr_up(
                 executable_directory()
             );
 
@@ -208,11 +237,42 @@ std::filesystem::path resolve_model_path(
         );
 
     if (!error) {
-        return search_up(current);
+        return search_asr_up(current);
     }
 
 
     return {};
+}
+
+std::filesystem::path resolve_llm_model_path(
+    int argc,
+    wchar_t** argv
+) {
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (std::wstring(argv[i]) == L"--llm-model") {
+            return make_absolute(argv[i + 1]);
+        }
+    }
+
+    std::wstring environment(32768, L'\0');
+    const DWORD length = GetEnvironmentVariableW(
+        L"LOQEL_LLM_MODEL",
+        environment.data(),
+        static_cast<DWORD>(environment.size())
+    );
+
+    if (length > 0 && length < environment.size()) {
+        environment.resize(length);
+        return make_absolute(environment);
+    }
+
+    if (auto found = search_llm_up(executable_directory()); !found.empty()) {
+        return found;
+    }
+
+    std::error_code error;
+    const auto current = std::filesystem::current_path(error);
+    return error ? std::filesystem::path{} : search_llm_up(current);
 }
 
 }

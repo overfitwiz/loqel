@@ -22,6 +22,8 @@ desktop and microphone adapters. There is no web or service layer.
 
 - [Using the application](docs/application.md) describes startup, dictation,
   model discovery, visible behavior, and current limitations.
+- [LLM text correction](docs/llm-correction.md) describes final-stage
+  normalization, model lifetime, prompt caching, and model discovery.
 - [Windows build guide](docs/build-windows.md) builds the complete tray
   application and tests.
 - [Source map](docs/source-map.md) explains what belongs in every app-owned

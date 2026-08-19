@@ -20,6 +20,7 @@ public:
         const CustomDictionarySettings& dictionary,
         const RecognitionSettings& recognition,
         const CleanupSettings& cleanup,
+        const LlmSettings& llm,
         const HotkeySettings& hotkeys
     );
 
@@ -27,6 +28,7 @@ public:
     const CustomDictionarySettings& dictionary() const;
     const RecognitionSettings& recognition() const;
     const CleanupSettings& cleanup() const;
+    const LlmSettings& llm() const;
     const HotkeySettings& hotkeys() const;
     void destroy();
 
@@ -37,6 +39,7 @@ private:
         const CustomDictionarySettings& dictionary,
         const RecognitionSettings& recognition,
         const CleanupSettings& cleanup,
+        const LlmSettings& llm,
         const HotkeySettings& hotkeys
     );
     void save_from_controls();
@@ -60,6 +63,7 @@ private:
     HWND mode_combo_ = nullptr;
     HWND latency_combo_ = nullptr;
     HWND cleanup_edit_ = nullptr;
+    HWND llm_checkbox_ = nullptr;
     HWND formatted_hotkey_combo_ = nullptr;
     HWND plain_hotkey_combo_ = nullptr;
     HWND language_combo_ = nullptr;
@@ -77,5 +81,6 @@ private:
     CustomDictionarySettings dictionary_;
     RecognitionSettings recognition_;
     CleanupSettings cleanup_;
+    LlmSettings llm_;
     HotkeySettings hotkeys_;
 };

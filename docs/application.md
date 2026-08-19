@@ -15,7 +15,8 @@ Only one instance may run in a Windows login session. On startup, the program:
 1. Acquires the `Local\\loqel.PushToTalk` mutex.
 2. Resolves the ASR model path.
 3. Creates a hidden application window, tray icon, and overlay.
-4. Loads the ASR model on the main thread.
+4. Loads the ASR model and, when enabled, the LLM correction model on the main
+   thread.
 5. Installs a global low-level keyboard hook for F8.
 6. Enters the Win32 message loop.
 
@@ -58,6 +59,10 @@ The recognition mode is selected in **Settings...**:
 
 Both modes apply the same custom dictionary, automatic punctuation, Markdown
 commands, target-window validation, and final text insertion rules.
+
+When enabled, local LLM correction runs once on the finalized text after all
+other cleanup and formatting. It does not process partial overlay text. See
+[LLM text correction](llm-correction.md) for the exact order and cache behavior.
 
 F8 is consumed by the global hook, so the foreground application does not receive
 that keystroke. Repeated key-down events generated while F8 is held do not start
@@ -116,6 +121,10 @@ was not spoken.
 Saving applies both command and dictionary changes to the next dictation
 session. An already-running session continues with the settings snapshot it
 started with.
+
+The General page also contains **Correct final text with the local LLM**. It is
+enabled by default. Disabling it unloads the LLM from RAM; enabling it loads and
+caches the correction prompt. This setting applies immediately.
 
 The settings window also controls streaming latency:
 

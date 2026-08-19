@@ -40,5 +40,11 @@ int main() {
         ++failures;
     }
 
+    const LlmSettings llm_defaults;
+    if (!llm_defaults.enabled) {
+        std::cerr << "FAILED: LLM correction should default to enabled\n";
+        ++failures;
+    }
+
     return failures == 0 ? 0 : 1;
 }

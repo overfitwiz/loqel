@@ -50,6 +50,7 @@ bool FormattingSettings::load(
     CustomDictionarySettings& dictionary,
     RecognitionSettings& recognition,
     CleanupSettings& cleanup,
+    LlmSettings& llm,
     HotkeySettings& hotkeys,
     std::string& error
 ) const {
@@ -58,6 +59,7 @@ bool FormattingSettings::load(
     dictionary = {};
     recognition = {};
     cleanup = {};
+    llm = {};
     hotkeys = {};
 
     std::error_code filesystem_error;
@@ -229,6 +231,13 @@ bool FormattingSettings::load(
         hotkeys.plain_function_key = plain_key;
     }
 
+    llm.enabled = GetPrivateProfileIntW(
+        L"llm_correction",
+        L"enabled",
+        llm.enabled ? 1 : 0,
+        path_.c_str()
+    ) != 0;
+
     return true;
 }
 
@@ -237,6 +246,7 @@ bool FormattingSettings::save(
     const CustomDictionarySettings& dictionary,
     const RecognitionSettings& recognition,
     const CleanupSettings& cleanup,
+    const LlmSettings& llm,
     const HotkeySettings& hotkeys,
     std::string& error
 ) const {
@@ -361,6 +371,18 @@ bool FormattingSettings::save(
     ) {
         error =
             "Could not save hotkey settings to: " +
+            WindowsText::to_utf8(path_.wstring());
+        return false;
+    }
+
+    if (!WritePrivateProfileStringW(
+            L"llm_correction",
+            L"enabled",
+            llm.enabled ? L"1" : L"0",
+            path_.c_str()
+        )) {
+        error =
+            "Could not save LLM correction settings to: " +
             WindowsText::to_utf8(path_.wstring());
         return false;
     }

@@ -18,7 +18,11 @@
 
 class App final : public IApplicationPlatform {
 public:
-    App(HINSTANCE instance, std::filesystem::path model_path);
+    App(
+        HINSTANCE instance,
+        std::filesystem::path model_path,
+        std::filesystem::path llm_model_path
+    );
     ~App() override;
 
     int run();
@@ -55,6 +59,7 @@ private:
     HINSTANCE instance_ = nullptr;
     HWND window_ = nullptr;
     std::filesystem::path model_path_;
+    std::filesystem::path llm_model_path_;
 
     TrayIcon tray_icon_;
     Hotkey hotkey_;
@@ -66,6 +71,7 @@ private:
     CustomDictionarySettings custom_dictionary_;
     RecognitionSettings recognition_settings_;
     CleanupSettings cleanup_settings_;
+    LlmSettings llm_settings_;
     HotkeySettings hotkey_settings_;
 
     WindowsAudioCapture audio_capture_;

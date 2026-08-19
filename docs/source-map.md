@@ -49,6 +49,8 @@ the preset-to-RNNT-context mapping shared by the core and platform settings UI.
 - `AudioQueue.*` is the bounded producer/consumer channel.
 - `AsrEngine.*` owns NeMo recognizer and stream handles through the public C API.
 - `MarkdownFormatter.*` performs deterministic UTF-8 Markdown command parsing.
+- `LlmPostprocessor.*` owns the resident llama model, cached correction prompt,
+  dynamic KV suffix, and deterministic final-text generation.
 
 ## Windows application adapter
 
@@ -73,7 +75,7 @@ It does not implement dictation or ASR state transitions.
 - `SettingsWindow.*`: native formatting/dictionary editor.
 - `TextInjector.*`: UTF-16 `SendInput` adapter.
 - `FormattingSettings.*`: Local AppData INI persistence.
-- `Paths.*`: Windows executable and model-path discovery.
+- `Paths.*`: Windows executable, ASR-model, and LLM-model path discovery.
 - `windows/WindowsText.*`: UTF-8/UTF-16 conversion at Win32 boundaries.
 
 ## Tests

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -272,25 +273,29 @@ static std::string normalize(
     const llama_vocab * vocab,
     llama_sampler * sampler,
     int prefix_tokens,
+    const std::vector<uint8_t> & prefix_state,
     const std::string & text
 ) {
     // --------------------------------------------------------
-    // Remove everything AFTER the permanent cached prompt.
+    // Restore the permanent prompt checkpoint. LFM2.5 has recurrent
+    // memory, so it cannot reliably remove only a dynamic suffix.
     // --------------------------------------------------------
 
     llama_memory_t memory =
         llama_get_memory(ctx);
 
-    if (!llama_memory_seq_rm(
-            memory,
-            0,
-            prefix_tokens,
-            -1
-        )) {
+    llama_memory_clear(memory, true);
+
+    if (llama_state_seq_set_data(
+            ctx,
+            prefix_state.data(),
+            prefix_state.size(),
+            0
+        ) != prefix_state.size()) {
 
         fprintf(
             stderr,
-            "ERROR: failed to clear dynamic KV cache\n"
+            "ERROR: failed to restore cached prompt state\n"
         );
 
         return {};
@@ -536,6 +541,26 @@ int main(int argc, char ** argv) {
     const int prefix_tokens =
         static_cast<int>(prefix.size());
 
+    std::vector<uint8_t> prefix_state(
+        llama_state_seq_get_size(ctx, 0)
+    );
+
+    if (
+        prefix_state.empty() ||
+        llama_state_seq_get_data(
+            ctx,
+            prefix_state.data(),
+            prefix_state.size(),
+            0
+        ) != prefix_state.size()
+    ) {
+        fprintf(stderr, "ERROR: failed to snapshot normalization prompt\n");
+        llama_free(ctx);
+        llama_model_free(model);
+        llama_backend_free();
+        return 1;
+    }
+
     fprintf(
         stderr,
         "Normalization prompt cached: %d tokens\n",
@@ -578,6 +603,7 @@ int main(int argc, char ** argv) {
                 vocab,
                 sampler,
                 prefix_tokens,
+                prefix_state,
                 input
             );
 

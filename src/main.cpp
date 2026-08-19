@@ -79,6 +79,12 @@ int WINAPI wWinMain(
             argv
         );
 
+    const std::filesystem::path llm_model_path =
+        Paths::resolve_llm_model_path(
+            argc,
+            argv
+        );
+
     LocalFree(argv);
 
 
@@ -113,7 +119,8 @@ int WINAPI wWinMain(
 
     App app(
         instance,
-        model_path
+        model_path,
+        llm_model_path
     );
 
     const int result =

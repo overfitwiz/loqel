@@ -41,6 +41,10 @@ struct CleanupSettings {
     std::vector<std::string> remove_words = {"Um", "uhm", "eh"};
 };
 
+struct LlmSettings {
+    bool enabled = true;
+};
+
 struct HotkeySettings {
     int formatted_function_key = 8;
     int plain_function_key = 9;
