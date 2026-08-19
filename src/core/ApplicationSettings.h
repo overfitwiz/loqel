@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -43,6 +44,11 @@ struct CleanupSettings {
 
 struct LlmSettings {
     bool enabled = true;
+};
+
+struct DebugSettings {
+    bool enabled = false;
+    std::filesystem::path output_directory;
 };
 
 struct HotkeySettings {

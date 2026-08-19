@@ -34,7 +34,8 @@ public:
         const CustomDictionarySettings& dictionary,
         const RecognitionSettings& recognition,
         const CleanupSettings& cleanup,
-        const LlmSettings& llm
+        const LlmSettings& llm,
+        const DebugSettings& debug
     );
 
     void start_session(OutputMode output_mode);
@@ -48,6 +49,7 @@ private:
     struct SessionResult {
         std::string text;
         std::string error;
+        std::string debug_error;
     };
 
     void consume_audio();
@@ -68,6 +70,8 @@ private:
     CleanupSettings cleanup_settings_;
     CleanupSettings active_cleanup_settings_;
     LlmSettings llm_settings_;
+    DebugSettings debug_settings_;
+    DebugSettings active_debug_settings_;
     OutputMode active_output_mode_ = OutputMode::Formatted;
 
     std::unique_ptr<AudioQueue> audio_queue_;

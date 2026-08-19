@@ -96,6 +96,7 @@ int App::run() {
             recognition_settings_,
             cleanup_settings_,
             llm_settings_,
+            debug_settings_,
             hotkey_settings_,
             settings_error
         )) {
@@ -111,7 +112,8 @@ int App::run() {
         custom_dictionary_,
         recognition_settings_,
         cleanup_settings_,
-        llm_settings_
+        llm_settings_,
+        debug_settings_
     );
 
     if (!tray_icon_.create(window_)) {
@@ -324,6 +326,7 @@ LRESULT CALLBACK App::window_proc(
                         app->recognition_settings_,
                         app->cleanup_settings_,
                         app->llm_settings_,
+                        app->debug_settings_,
                         app->hotkey_settings_
                     )) {
                     app->show_message(
@@ -347,6 +350,7 @@ LRESULT CALLBACK App::window_proc(
             app->recognition_settings_ = app->settings_window_.recognition();
             app->cleanup_settings_ = app->settings_window_.cleanup();
             app->llm_settings_ = app->settings_window_.llm();
+            app->debug_settings_ = app->settings_window_.debug();
             app->hotkey_settings_ = app->settings_window_.hotkeys();
             app->hotkey_.configure(app->hotkey_settings_);
             app->core_.set_settings(
@@ -354,7 +358,8 @@ LRESULT CALLBACK App::window_proc(
                 app->custom_dictionary_,
                 app->recognition_settings_,
                 app->cleanup_settings_,
-                app->llm_settings_
+                app->llm_settings_,
+                app->debug_settings_
             );
 
             std::string error;
@@ -364,6 +369,7 @@ LRESULT CALLBACK App::window_proc(
                     app->recognition_settings_,
                     app->cleanup_settings_,
                     app->llm_settings_,
+                    app->debug_settings_,
                     app->hotkey_settings_,
                     error
                 )) {

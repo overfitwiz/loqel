@@ -5,6 +5,7 @@ cd /d "%~dp0"
 
 set "BUILD_DIR=build"
 set "DIST_DIR=%CD%\dist"
+set "MODELS_DIR=%DIST_DIR%\models"
 
 if not exist "%BUILD_DIR%\CMakeCache.txt" (
     echo ERROR: The build directory is not configured.
@@ -63,11 +64,23 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Models are intentionally not copied into the release. Keep this directory
+REM ready for the user to populate after packaging.
+if not exist "%MODELS_DIR%" mkdir "%MODELS_DIR%"
+
+if errorlevel 1 (
+    echo ERROR: Could not create the models directory.
+    exit /b 1
+)
+
 echo.
 echo Release ready:
 echo %DIST_DIR%
 echo.
-echo Users should run download-model.bat once, then loqel.exe.
+echo Copy model files to:
+echo %MODELS_DIR%
+echo.
+echo Then run loqel.exe.
 
 endlocal
 exit /b 0

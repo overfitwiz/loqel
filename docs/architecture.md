@@ -85,6 +85,11 @@ into a recording buffer, then calls `nemo_speech_asr_recognize_f32` after captur
 closes. Both paths send their final UTF-8 transcript through the same
 `MarkdownFormatter` and insertion flow.
 
+When debug capture is enabled, the consumer also retains the session audio and
+writes a timestamped diagnostics directory containing a PCM WAV, the raw ASR
+transcript, and the final postprocessed transcript. Live mode does not retain an
+additional audio buffer when debug capture is disabled.
+
 The RNNT latency preset maps to right-context values `1`, `6`, or `-1` (model
 default). Because this setting belongs to recognizer construction, changing it
 reloads the recognizer. A failed reload attempts to restore the previous preset.

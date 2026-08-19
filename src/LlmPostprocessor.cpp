@@ -1,72 +1,81 @@
 #include "LlmPostprocessor.h"
 
+#include "LlmCorrectionPolicy.h"
+
 #include "ggml-backend.h"
 #include "llama.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace {
 
-constexpr int kMaximumOutputTokens = 128;
+constexpr int32_t kContextTokens = 2048;
 
-// This fixed prefix is decoded once when the model is loaded. Every dictation
-// reuses its KV entries and replaces only the short Input/Output suffix.
-constexpr const char* kNormalizationPrompt =
-    "You are a speech-to-text normalization engine.\n"
-    "\n"
-    "Convert spoken or awkwardly transcribed text into the written form "
-    "the speaker intended.\n"
-    "\n"
-    "You may normalize:\n"
-    "- URLs and domain names\n"
-    "- Email addresses\n"
-    "- Numbers\n"
-    "- Dates and times\n"
-    "- Currency amounts\n"
-    "- Percentages\n"
-    "- Phone numbers\n"
-    "- Units and measurements\n"
-    "- Common symbols and punctuation\n"
-    "- Spoken formatting such as dot, slash, at, dash, underscore and colon\n"
-    "\n"
-    "Rules:\n"
-    "1. Preserve the original meaning.\n"
-    "2. Preserve the original wording as much as possible.\n"
-    "3. Do not summarize or paraphrase.\n"
-    "4. Do not add information.\n"
-    "5. Only normalize when the intended form is clear.\n"
-    "6. If uncertain, leave the text unchanged.\n"
-    "7. Return only the normalized text.\n"
-    "8. Do not explain your changes.\n"
-    "\n"
-    "Examples:\n"
-    "\n"
-    "Input: go to github dot com\n"
-    "Output: go to github.com\n"
-    "\n"
-    "Input: email me at john dot smith at gmail dot com\n"
-    "Output: email me at john.smith@gmail.com\n"
-    "\n"
-    "Input: it costs twenty five dollars\n"
-    "Output: it costs $25\n"
-    "\n"
-    "Input: that's fifty percent\n"
-    "Output: that's 50%\n"
-    "\n"
-    "Input: the temperature is twenty two degrees celsius\n"
-    "Output: the temperature is 22 degrees Celsius\n"
-    "\n"
-    "Input: I bought twenty apples\n"
-    "Output: I bought 20 apples\n"
-    "\n";
+// Kept deliberately compact because this prefix is part of every context. It
+// is formatted with the model's own chat template and cached after loading.
+constexpr const char* kSystemPrompt =
+    "Correct speech-to-text without changing its content. Preserve every "
+    "sentence, clause, uncertain fragment, repetition, negation, and line "
+    "break. Never summarize, merge, omit, explain, or add information. Only "
+    "fix clear transcription, capitalization, punctuation, numbers, and "
+    "spoken forms such as dot, slash, at, dash, underscore, and colon. If a "
+    "change is uncertain, copy that part unchanged. Return only the corrected "
+    "text. Example: 'Open github dot com. Keep this sentence.' becomes 'Open "
+    "github.com. Keep this sentence.'";
+
+constexpr const char* kUserInstruction =
+    "Correct this transcript. Preserve all content and return only corrected text:\n";
+
+std::vector<llama_chat_message> static_messages() {
+    return {
+        {"system", kSystemPrompt}
+    };
+}
+
+bool format_chat(
+    const std::string& chat_template,
+    const std::vector<llama_chat_message>& messages,
+    bool add_assistant,
+    std::string& formatted
+) {
+    const int32_t size = llama_chat_apply_template(
+        chat_template.c_str(),
+        messages.data(),
+        messages.size(),
+        add_assistant,
+        nullptr,
+        0
+    );
+    if (size <= 0) {
+        return false;
+    }
+
+    std::vector<char> buffer(static_cast<std::size_t>(size) + 1);
+    const int32_t written = llama_chat_apply_template(
+        chat_template.c_str(),
+        messages.data(),
+        messages.size(),
+        add_assistant,
+        buffer.data(),
+        static_cast<int32_t>(buffer.size())
+    );
+    if (written <= 0 || written > size) {
+        return false;
+    }
+
+    formatted.assign(buffer.data(), static_cast<std::size_t>(written));
+    return true;
+}
 
 std::vector<llama_token> tokenize(
     const llama_vocab* vocabulary,
     const std::string& text,
-    bool add_special
+    bool add_special,
+    bool parse_special
 ) {
     int count = llama_tokenize(
         vocabulary,
@@ -75,7 +84,7 @@ std::vector<llama_token> tokenize(
         nullptr,
         0,
         add_special,
-        false
+        parse_special
     );
 
     if (count >= 0) {
@@ -90,7 +99,7 @@ std::vector<llama_token> tokenize(
         tokens.data(),
         static_cast<int32_t>(tokens.size()),
         add_special,
-        false
+        parse_special
     );
 
     if (count < 0) {
@@ -185,6 +194,8 @@ struct LlmPostprocessor::State {
     llama_context* context = nullptr;
     llama_sampler* sampler = nullptr;
     const llama_vocab* vocabulary = nullptr;
+    std::string chat_template;
+    std::string formatted_prefix;
     llama_pos prefix_tokens = 0;
     std::vector<uint8_t> prefix_state;
 };
@@ -262,9 +273,29 @@ bool LlmPostprocessor::load_locked(std::string& error) {
     }
 
     state->vocabulary = llama_model_get_vocab(state->model);
+    const char* chat_template = llama_model_chat_template(state->model, nullptr);
+    if (!chat_template) {
+        error = "The LLM model does not contain a supported chat template.";
+        llama_model_free(state->model);
+        return false;
+    }
+    state->chat_template = chat_template;
+
+    if (!format_chat(
+            state->chat_template,
+            static_messages(),
+            false,
+            state->formatted_prefix
+        )) {
+        error = "Could not apply the LLM model's chat template.";
+        llama_model_free(state->model);
+        return false;
+    }
+
     const std::vector<llama_token> prefix = tokenize(
         state->vocabulary,
-        kNormalizationPrompt,
+        state->formatted_prefix,
+        false,
         true
     );
     if (prefix.empty()) {
@@ -274,7 +305,7 @@ bool LlmPostprocessor::load_locked(std::string& error) {
     }
 
     llama_context_params context_parameters = llama_context_default_params();
-    context_parameters.n_ctx = 2048;
+    context_parameters.n_ctx = kContextTokens;
     context_parameters.n_batch = 1024;
     state->context = llama_init_from_model(state->model, context_parameters);
     if (!state->context) {
@@ -320,7 +351,11 @@ bool LlmPostprocessor::load_locked(std::string& error) {
     state->sampler = llama_sampler_chain_init(
         llama_sampler_chain_default_params()
     );
-    llama_sampler_chain_add(state->sampler, llama_sampler_init_greedy());
+    // Liquid AI recommends low-temperature top-k sampling for LFM2.5. A fixed
+    // seed keeps correction reproducible while avoiding greedy copy bias.
+    llama_sampler_chain_add(state->sampler, llama_sampler_init_top_k(50));
+    llama_sampler_chain_add(state->sampler, llama_sampler_init_temp(0.1f));
+    llama_sampler_chain_add(state->sampler, llama_sampler_init_dist(0x10ce1u));
     state_ = std::move(state);
     return true;
 }
@@ -369,15 +404,65 @@ bool LlmPostprocessor::process(
     }
 
     llama_sampler_reset(state_->sampler);
-    const std::string request = "Input: " + text + "\nOutput:";
+
+    std::vector<llama_chat_message> messages = static_messages();
+    const std::string user_message = kUserInstruction + text;
+    messages.push_back({"user", user_message.c_str()});
+
+    std::string formatted_request;
+    if (!format_chat(
+            state_->chat_template,
+            messages,
+            true,
+            formatted_request
+        )) {
+        error = "Could not apply the LLM model's chat template.";
+        return false;
+    }
+    if (
+        formatted_request.size() < state_->formatted_prefix.size() ||
+        formatted_request.compare(
+            0,
+            state_->formatted_prefix.size(),
+            state_->formatted_prefix
+        ) != 0
+    ) {
+        error = "The LLM chat template produced an inconsistent prompt.";
+        return false;
+    }
+
+    const std::string request = formatted_request.substr(
+        state_->formatted_prefix.size()
+    );
     const std::vector<llama_token> request_tokens = tokenize(
         state_->vocabulary,
         request,
-        false
+        false,
+        true
     );
     if (request_tokens.empty()) {
         error = "Could not tokenize the text for LLM correction.";
         return false;
+    }
+
+    const std::vector<llama_token> input_tokens = tokenize(
+        state_->vocabulary,
+        text,
+        false,
+        false
+    );
+    const int64_t available_tokens =
+        static_cast<int64_t>(kContextTokens) -
+        static_cast<int64_t>(state_->prefix_tokens) -
+        static_cast<int64_t>(request_tokens.size());
+
+    // If there is not enough context to return text of approximately the same
+    // size, bypass correction. The recognized transcript remains in output.
+    if (
+        input_tokens.empty() ||
+        available_tokens < static_cast<int64_t>(input_tokens.size()) + 16
+    ) {
+        return true;
     }
 
     if (!decode_tokens(
@@ -392,8 +477,15 @@ bool LlmPostprocessor::process(
     llama_pos next_position = state_->prefix_tokens +
         static_cast<llama_pos>(request_tokens.size());
     std::string corrected;
+    const int64_t desired_output_tokens =
+        static_cast<int64_t>(input_tokens.size()) +
+        std::max<int64_t>(64, static_cast<int64_t>(input_tokens.size()) / 2);
+    const int maximum_output_tokens = static_cast<int>(
+        std::min(available_tokens, desired_output_tokens)
+    );
+    bool completed = false;
 
-    for (int i = 0; i < kMaximumOutputTokens; ++i) {
+    for (int i = 0; i < maximum_output_tokens; ++i) {
         const llama_token token = llama_sampler_sample(
             state_->sampler,
             state_->context,
@@ -401,16 +493,11 @@ bool LlmPostprocessor::process(
         );
 
         if (llama_vocab_is_eog(state_->vocabulary, token)) {
+            completed = true;
             break;
         }
 
         const std::string piece = token_piece(state_->vocabulary, token);
-        const std::size_t newline = piece.find_first_of("\r\n");
-        if (newline != std::string::npos) {
-            corrected.append(piece.data(), newline);
-            break;
-        }
-
         corrected += piece;
         if (!decode_tokens(state_->context, {token}, next_position++)) {
             error = "Could not generate the complete LLM correction.";
@@ -419,9 +506,14 @@ bool LlmPostprocessor::process(
     }
 
     corrected = trim(std::move(corrected));
-    if (corrected.empty()) {
-        error = "The LLM returned an empty correction.";
-        return false;
+    if (
+        !completed ||
+        !llm_correction_length_is_safe(text, corrected)
+    ) {
+        // A missing end token indicates token/context truncation. Empty or
+        // materially different output is also unsafe. In every case retain
+        // the original transcript and treat optional correction as bypassed.
+        return true;
     }
 
     output = std::move(corrected);

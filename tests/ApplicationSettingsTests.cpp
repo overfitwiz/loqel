@@ -46,5 +46,11 @@ int main() {
         ++failures;
     }
 
+    const DebugSettings debug_defaults;
+    if (debug_defaults.enabled) {
+        std::cerr << "FAILED: debug mode should default to disabled\n";
+        ++failures;
+    }
+
     return failures == 0 ? 0 : 1;
 }

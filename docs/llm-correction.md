@@ -41,23 +41,29 @@ The implementation in `src/LlmPostprocessor.cpp` follows
 
 1. Tokenize and evaluate the fixed normalization instructions and examples once
    when the model loads.
-2. Snapshot sequence 0 after the fixed prompt, including its attention KV cache
+2. Format the compact system instruction and its preservation example with the
+   chat template embedded in the GGUF model. Snapshot sequence 0 after that
+   fixed prompt, including its attention KV cache
    and recurrent state.
 3. Before each dictation, clear the previous dynamic state and restore that
    fixed-prompt checkpoint. This is required for hybrid recurrent models such as
    LFM2.5, which cannot reliably remove an arbitrary sequence suffix.
-4. Append the varying `Input: <dictation>\nOutput:` suffix at the first dynamic
-   position.
-5. Generate deterministically with the greedy sampler, stopping at an end token,
-   the first newline, or 128 output tokens.
+4. Append the current dictation as a user message and the model's assistant
+   generation marker at the first dynamic position.
+5. Generate reproducibly with the model-recommended low-temperature top-k
+   sampling and a fixed seed until an end token. The output allowance is sized
+   from the input and remaining context rather than a fixed token limit, so a
+   token-limit exit is detectable instead of being accepted as complete text.
 
 Consequently, repeated dictations restore rather than reevaluate the long
 correction prompt; only the current dictation and generated answer are evaluated
 each time.
 
-The context size is 2048 tokens and the batch size is 1024. Input that cannot be
-evaluated, an empty answer, or another llama error aborts insertion and displays
-an error rather than inserting a partial generated result.
+The context size is 2048 tokens and the batch size is 1024. If the context cannot
+hold an approximately full-length response, correction is bypassed. Empty,
+token-truncated, line-losing, or materially shorter/longer generated text is
+also rejected, and the original recognized text is retained. Llama API errors
+still abort insertion and display an error.
 
 ## LLM model discovery
 

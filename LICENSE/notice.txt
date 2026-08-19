@@ -1,0 +1,10 @@
+Loqel is licensed under the Apache License 2.0.
+
+Loqel uses third-party software and models that remain subject to their respective licenses:
+
+NeMo-Speech.cpp — Apache License 2.0
+llama.cpp — MIT License
+NVIDIA Nemotron Speech — NVIDIA Open Model License Agreement
+Liquid AI LFM2.5 — LFM Open License v1.0
+
+These third-party licenses apply independently of the Loqel license. See the respective license files and terms for details.

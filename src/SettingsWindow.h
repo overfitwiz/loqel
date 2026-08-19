@@ -21,6 +21,7 @@ public:
         const RecognitionSettings& recognition,
         const CleanupSettings& cleanup,
         const LlmSettings& llm,
+        const DebugSettings& debug,
         const HotkeySettings& hotkeys
     );
 
@@ -29,6 +30,7 @@ public:
     const RecognitionSettings& recognition() const;
     const CleanupSettings& cleanup() const;
     const LlmSettings& llm() const;
+    const DebugSettings& debug() const;
     const HotkeySettings& hotkeys() const;
     void destroy();
 
@@ -40,6 +42,7 @@ private:
         const RecognitionSettings& recognition,
         const CleanupSettings& cleanup,
         const LlmSettings& llm,
+        const DebugSettings& debug,
         const HotkeySettings& hotkeys
     );
     void save_from_controls();
@@ -64,6 +67,7 @@ private:
     HWND latency_combo_ = nullptr;
     HWND cleanup_edit_ = nullptr;
     HWND llm_checkbox_ = nullptr;
+    HWND debug_checkbox_ = nullptr;
     HWND formatted_hotkey_combo_ = nullptr;
     HWND plain_hotkey_combo_ = nullptr;
     HWND language_combo_ = nullptr;
@@ -82,5 +86,6 @@ private:
     RecognitionSettings recognition_;
     CleanupSettings cleanup_;
     LlmSettings llm_;
+    DebugSettings debug_;
     HotkeySettings hotkeys_;
 };

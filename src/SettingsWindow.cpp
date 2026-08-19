@@ -171,13 +171,14 @@ bool SettingsWindow::show(
     const RecognitionSettings& recognition,
     const CleanupSettings& cleanup,
     const LlmSettings& llm,
+    const DebugSettings& debug,
     const HotkeySettings& hotkeys
 ) {
     if (!window_ && !create(instance, owner)) {
         return false;
     }
 
-    populate(commands, dictionary, recognition, cleanup, llm, hotkeys);
+    populate(commands, dictionary, recognition, cleanup, llm, debug, hotkeys);
     center_on_owner();
 
     ShowWindow(window_, SW_SHOWNORMAL);
@@ -193,6 +194,7 @@ void SettingsWindow::populate(
     const RecognitionSettings& recognition,
     const CleanupSettings& cleanup,
     const LlmSettings& llm,
+    const DebugSettings& debug,
     const HotkeySettings& hotkeys
 ) {
     commands_ = commands;
@@ -200,6 +202,7 @@ void SettingsWindow::populate(
     recognition_ = recognition;
     cleanup_ = cleanup;
     llm_ = llm;
+    debug_ = debug;
     hotkeys_ = hotkeys;
 
     for (std::size_t i = 0; i < kMarkdownCommandCount; ++i) {
@@ -255,6 +258,12 @@ void SettingsWindow::populate(
         llm_checkbox_,
         BM_SETCHECK,
         llm.enabled ? BST_CHECKED : BST_UNCHECKED,
+        0
+    );
+    SendMessageW(
+        debug_checkbox_,
+        BM_SETCHECK,
+        debug.enabled ? BST_CHECKED : BST_UNCHECKED,
         0
     );
     SendMessageW(
@@ -400,6 +409,14 @@ void SettingsWindow::save_from_controls() {
         0
     ) == BST_CHECKED;
 
+    DebugSettings debug = debug_;
+    debug.enabled = SendMessageW(
+        debug_checkbox_,
+        BM_GETCHECK,
+        0,
+        0
+    ) == BST_CHECKED;
+
     hotkeys.formatted_function_key =
         static_cast<int>(SendMessageW(
             formatted_hotkey_combo_,
@@ -433,6 +450,7 @@ void SettingsWindow::save_from_controls() {
     recognition_ = recognition;
     cleanup_ = std::move(cleanup);
     llm_ = llm;
+    debug_ = std::move(debug);
     hotkeys_ = hotkeys;
     ShowWindow(window_, SW_HIDE);
     PostMessageW(owner_, kSavedMessage, 0, 0);
@@ -456,6 +474,10 @@ const CleanupSettings& SettingsWindow::cleanup() const {
 
 const LlmSettings& SettingsWindow::llm() const {
     return llm_;
+}
+
+const DebugSettings& SettingsWindow::debug() const {
+    return debug_;
 }
 
 const HotkeySettings& SettingsWindow::hotkeys() const {
@@ -933,11 +955,27 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 nullptr
             );
 
+            settings->debug_checkbox_ = CreateWindowExW(
+                0,
+                L"BUTTON",
+                L"Debug mode: save audio and transcripts",
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                450,
+                420,
+                390,
+                28,
+                window,
+                reinterpret_cast<HMENU>(4105),
+                nullptr,
+                nullptr
+            );
+
             SendMessageW(mode_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(settings->mode_combo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(latency_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(settings->latency_combo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(settings->llm_checkbox_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            SendMessageW(settings->debug_checkbox_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(language_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(settings->language_combo_, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
             SendMessageW(model_label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
@@ -951,6 +989,7 @@ LRESULT CALLBACK SettingsWindow::window_proc(
             settings->add_to_tab(GeneralTab, latency_label);
             settings->add_to_tab(GeneralTab, settings->latency_combo_);
             settings->add_to_tab(GeneralTab, settings->llm_checkbox_);
+            settings->add_to_tab(GeneralTab, settings->debug_checkbox_);
 
             HWND formatted_hotkey_label = CreateWindowExW(
                 0,

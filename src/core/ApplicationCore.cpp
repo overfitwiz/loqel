@@ -1,7 +1,16 @@
 #include "ApplicationCore.h"
 
+#include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <cstdint>
+#include <ctime>
+#include <fstream>
+#include <iomanip>
 #include <iterator>
+#include <limits>
+#include <sstream>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -163,6 +172,172 @@ std::string prepare_output(
     );
 }
 
+void preserve_first_error(std::string& destination, std::string error) {
+    if (destination.empty()) {
+        destination = std::move(error);
+    }
+}
+
+bool create_debug_session_directory(
+    const DebugSettings& settings,
+    std::filesystem::path& directory,
+    std::string& error
+) {
+    if (settings.output_directory.empty()) {
+        error = "The debug output directory is not configured.";
+        return false;
+    }
+
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t time = std::chrono::system_clock::to_time_t(now);
+    std::tm local_time = {};
+
+#ifdef _WIN32
+    localtime_s(&local_time, &time);
+#else
+    localtime_r(&time, &local_time);
+#endif
+
+    const auto milliseconds = std::chrono::duration_cast<
+        std::chrono::milliseconds
+    >(now.time_since_epoch()).count() % 1000;
+
+    std::ostringstream name;
+    name << std::put_time(&local_time, "%Y%m%d-%H%M%S")
+         << '-' << std::setfill('0') << std::setw(3) << milliseconds;
+
+    std::error_code filesystem_error;
+    std::filesystem::create_directories(
+        settings.output_directory,
+        filesystem_error
+    );
+
+    if (filesystem_error) {
+        error = "Could not create the debug output directory.";
+        return false;
+    }
+
+    for (int suffix = 0; suffix < 1000; ++suffix) {
+        std::string candidate_name = name.str();
+        if (suffix > 0) {
+            candidate_name += '-' + std::to_string(suffix);
+        }
+
+        const std::filesystem::path candidate =
+            settings.output_directory / candidate_name;
+
+        filesystem_error.clear();
+        if (std::filesystem::create_directory(candidate, filesystem_error)) {
+            directory = candidate;
+            return true;
+        }
+
+        if (filesystem_error) {
+            error = "Could not create the debug session directory.";
+            return false;
+        }
+    }
+
+    error = "Could not allocate a unique debug session directory.";
+    return false;
+}
+
+void write_u16(std::ofstream& output, std::uint16_t value) {
+    const char bytes[] = {
+        static_cast<char>(value & 0xff),
+        static_cast<char>((value >> 8) & 0xff)
+    };
+    output.write(bytes, sizeof(bytes));
+}
+
+void write_u32(std::ofstream& output, std::uint32_t value) {
+    const char bytes[] = {
+        static_cast<char>(value & 0xff),
+        static_cast<char>((value >> 8) & 0xff),
+        static_cast<char>((value >> 16) & 0xff),
+        static_cast<char>((value >> 24) & 0xff)
+    };
+    output.write(bytes, sizeof(bytes));
+}
+
+bool write_debug_audio(
+    const std::filesystem::path& path,
+    const std::vector<float>& samples,
+    int sample_rate,
+    std::string& error
+) {
+    constexpr std::uint32_t kHeaderBytes = 36;
+    constexpr std::uint16_t kChannels = 1;
+    constexpr std::uint16_t kBitsPerSample = 16;
+
+    if (sample_rate <= 0) {
+        error = "Could not save debug audio: invalid sample rate.";
+        return false;
+    }
+
+    if (samples.size() > std::numeric_limits<std::uint32_t>::max() / 2) {
+        error = "Could not save debug audio: recording is too large.";
+        return false;
+    }
+
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) {
+        error = "Could not open the debug audio file.";
+        return false;
+    }
+
+    const auto data_bytes = static_cast<std::uint32_t>(samples.size() * 2);
+    output.write("RIFF", 4);
+    write_u32(output, kHeaderBytes + data_bytes);
+    output.write("WAVEfmt ", 8);
+    write_u32(output, 16);
+    write_u16(output, 1);
+    write_u16(output, kChannels);
+    write_u32(output, static_cast<std::uint32_t>(sample_rate));
+    write_u32(output, static_cast<std::uint32_t>(sample_rate * 2));
+    write_u16(output, 2);
+    write_u16(output, kBitsPerSample);
+    output.write("data", 4);
+    write_u32(output, data_bytes);
+
+    for (float sample : samples) {
+        const float clamped = std::max(-1.0f, std::min(1.0f, sample));
+        const auto pcm = static_cast<std::int16_t>(
+            clamped < 0.0f ? clamped * 32768.0f : clamped * 32767.0f
+        );
+        write_u16(output, static_cast<std::uint16_t>(pcm));
+    }
+
+    if (!output) {
+        error = "Could not write the debug audio file.";
+        return false;
+    }
+
+    return true;
+}
+
+bool write_debug_text(
+    const std::filesystem::path& path,
+    const std::string& text,
+    std::string& error
+) {
+    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    if (!output) {
+        error = "Could not open a debug transcript file.";
+        return false;
+    }
+
+    output.write(text.data(), static_cast<std::streamsize>(text.size()));
+    output.put('\n');
+
+    if (!output) {
+        error = "Could not write a debug transcript file.";
+        return false;
+    }
+
+    return true;
+}
+
 }
 
 ApplicationCore::ApplicationCore(
@@ -202,13 +377,15 @@ void ApplicationCore::set_settings(
     const CustomDictionarySettings& dictionary,
     const RecognitionSettings& recognition,
     const CleanupSettings& cleanup,
-    const LlmSettings& llm
+    const LlmSettings& llm,
+    const DebugSettings& debug
 ) {
     markdown_commands_ = commands;
     custom_dictionary_ = dictionary;
     recognition_settings_ = recognition;
     cleanup_settings_ = cleanup;
     llm_settings_ = llm;
+    debug_settings_ = debug;
 
     if (asr_.loaded() && llm_.enabled() != llm.enabled) {
         platform_.show_overlay(
@@ -293,6 +470,7 @@ void ApplicationCore::start_session(OutputMode output_mode) {
     active_custom_dictionary_ = custom_dictionary_;
     active_recognition_settings_ = recognition_settings_;
     active_cleanup_settings_ = cleanup_settings_;
+    active_debug_settings_ = debug_settings_;
     active_output_mode_ = output_mode;
     audio_queue_ = std::make_unique<AudioQueue>();
 
@@ -369,6 +547,15 @@ void ApplicationCore::consume_audio() {
         return;
     }
 
+    std::filesystem::path debug_directory;
+    if (active_debug_settings_.enabled) {
+        create_debug_session_directory(
+            active_debug_settings_,
+            debug_directory,
+            result.debug_error
+        );
+    }
+
     if (
         active_recognition_settings_.mode ==
         RecognitionMode::RecordThenTranscribe
@@ -387,6 +574,21 @@ void ApplicationCore::consume_audio() {
 
         result.error = queue->error();
 
+        if (!debug_directory.empty()) {
+            std::string debug_error;
+            if (!write_debug_audio(
+                    debug_directory / "audio.wav",
+                    recording,
+                    sample_rate,
+                    debug_error
+                )) {
+                preserve_first_error(
+                    result.debug_error,
+                    std::move(debug_error)
+                );
+            }
+        }
+
         if (result.error.empty()) {
             std::string transcript;
 
@@ -401,6 +603,20 @@ void ApplicationCore::consume_audio() {
                 transcript.clear();
             }
 
+            if (!debug_directory.empty()) {
+                std::string debug_error;
+                if (!write_debug_text(
+                        debug_directory / "transcript.txt",
+                        transcript,
+                        debug_error
+                    )) {
+                    preserve_first_error(
+                        result.debug_error,
+                        std::move(debug_error)
+                    );
+                }
+            }
+
             result.text = prepare_output(
                 transcript,
                 active_output_mode_,
@@ -413,6 +629,20 @@ void ApplicationCore::consume_audio() {
                 result.error.empty()
             ) {
                 result.error = "LLM text correction failed.";
+            }
+
+            if (!debug_directory.empty()) {
+                std::string debug_error;
+                if (!write_debug_text(
+                        debug_directory / "llm-correction.txt",
+                        result.text,
+                        debug_error
+                    )) {
+                    preserve_first_error(
+                        result.debug_error,
+                        std::move(debug_error)
+                    );
+                }
             }
         }
 
@@ -484,8 +714,17 @@ void ApplicationCore::consume_audio() {
 
     bool asr_ok = true;
     std::vector<float> samples;
+    std::vector<float> debug_recording;
 
     while (queue->pop(samples)) {
+        if (!debug_directory.empty()) {
+            debug_recording.insert(
+                debug_recording.end(),
+                samples.begin(),
+                samples.end()
+            );
+        }
+
         if (asr_ok) {
             std::vector<AsrResult> updates;
 
@@ -526,6 +765,33 @@ void ApplicationCore::consume_audio() {
         asr_.close_stream();
     }
 
+    if (!debug_directory.empty()) {
+        std::string debug_error;
+        if (!write_debug_audio(
+                debug_directory / "audio.wav",
+                debug_recording,
+                sample_rate,
+                debug_error
+            )) {
+            preserve_first_error(
+                result.debug_error,
+                std::move(debug_error)
+            );
+        }
+
+        debug_error.clear();
+        if (!write_debug_text(
+                debug_directory / "transcript.txt",
+                committed,
+                debug_error
+            )) {
+            preserve_first_error(
+                result.debug_error,
+                std::move(debug_error)
+            );
+        }
+    }
+
     result.text = prepare_output(
         committed,
         active_output_mode_,
@@ -539,6 +805,20 @@ void ApplicationCore::consume_audio() {
         result.error.empty()
     ) {
         result.error = "LLM text correction failed.";
+    }
+
+    if (!debug_directory.empty()) {
+        std::string debug_error;
+        if (!write_debug_text(
+                debug_directory / "llm-correction.txt",
+                result.text,
+                debug_error
+            )) {
+            preserve_first_error(
+                result.debug_error,
+                std::move(debug_error)
+            );
+        }
     }
 
     post_session_done(std::move(result));
@@ -566,6 +846,16 @@ void ApplicationCore::handle_session_done(SessionResult result) {
     finalizing_ = false;
     platform_.hide_overlay();
 
+    const auto report_debug_error = [&] {
+        if (!result.debug_error.empty()) {
+            platform_.show_message(
+                "Debug mode",
+                result.debug_error,
+                MessageKind::Warning
+            );
+        }
+    };
+
     if (!result.error.empty()) {
         platform_.show_message(
             "Dictation error",
@@ -573,11 +863,13 @@ void ApplicationCore::handle_session_done(SessionResult result) {
             MessageKind::Error
         );
         target_ = 0;
+        report_debug_error();
         return;
     }
 
     if (result.text.empty()) {
         target_ = 0;
+        report_debug_error();
         return;
     }
 
@@ -588,6 +880,7 @@ void ApplicationCore::handle_session_done(SessionResult result) {
             MessageKind::Warning
         );
         target_ = 0;
+        report_debug_error();
         return;
     }
 
@@ -607,6 +900,7 @@ void ApplicationCore::handle_session_done(SessionResult result) {
     }
 
     target_ = 0;
+    report_debug_error();
 }
 
 void ApplicationCore::shutdown() {

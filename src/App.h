@@ -72,6 +72,7 @@ private:
     RecognitionSettings recognition_settings_;
     CleanupSettings cleanup_settings_;
     LlmSettings llm_settings_;
+    DebugSettings debug_settings_;
     HotkeySettings hotkey_settings_;
 
     WindowsAudioCapture audio_capture_;

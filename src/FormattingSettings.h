@@ -17,6 +17,7 @@ public:
         RecognitionSettings& recognition,
         CleanupSettings& cleanup,
         LlmSettings& llm,
+        DebugSettings& debug,
         HotkeySettings& hotkeys,
         std::string& error
     ) const;
@@ -27,6 +28,7 @@ public:
         const RecognitionSettings& recognition,
         const CleanupSettings& cleanup,
         const LlmSettings& llm,
+        const DebugSettings& debug,
         const HotkeySettings& hotkeys,
         std::string& error
     ) const;

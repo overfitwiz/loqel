@@ -126,6 +126,20 @@ The General page also contains **Correct final text with the local LLM**. It is
 enabled by default. Disabling it unloads the LLM from RAM; enabling it loads and
 caches the correction prompt. This setting applies immediately.
 
+The General page also contains **Debug mode: save audio and transcripts**. It is
+disabled by default. When enabled, every dictation session creates a timestamped
+directory under:
+
+```text
+%LOCALAPPDATA%\loqel\debug
+```
+
+Each session directory contains `audio.wav` (mono 16-bit PCM), `transcript.txt`
+(the raw ASR transcript), and `llm-correction.txt` (the final text after cleanup,
+formatting, and optional LLM correction). Debug capture works in both live and
+record-first recognition modes. The app does not automatically delete these
+files.
+
 The settings window also controls streaming latency:
 
 | Preset | RNNT right context | Tradeoff |

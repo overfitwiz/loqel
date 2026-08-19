@@ -63,6 +63,7 @@ if(LOQEL_BUILD_CORE)
         src/core/ApplicationCore.cpp
         src/AudioQueue.cpp
         src/AsrEngine.cpp
+        src/LlmCorrectionPolicy.cpp
         src/LlmPostprocessor.cpp
     )
 
@@ -201,4 +202,40 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME application_settings COMMAND application_settings_tests)
+
+    add_executable(
+        llm_correction_policy_tests
+        tests/LlmCorrectionPolicyTests.cpp
+        src/LlmCorrectionPolicy.cpp
+    )
+
+    target_include_directories(
+        llm_correction_policy_tests
+        PRIVATE
+        src
+    )
+
+    add_test(NAME llm_correction_policy COMMAND llm_correction_policy_tests)
+
+    if(LOQEL_BUILD_CORE)
+        add_executable(
+            llm_postprocessor_integration_tests
+            tests/LlmPostprocessorIntegrationTests.cpp
+        )
+
+        target_link_libraries(
+            llm_postprocessor_integration_tests
+            PRIVATE
+            loqel_core
+        )
+
+        add_test(
+            NAME llm_postprocessor_integration
+            COMMAND llm_postprocessor_integration_tests
+        )
+        set_tests_properties(
+            llm_postprocessor_integration
+            PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        )
+    endif()
 endif()

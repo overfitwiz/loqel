@@ -51,6 +51,7 @@ bool FormattingSettings::load(
     RecognitionSettings& recognition,
     CleanupSettings& cleanup,
     LlmSettings& llm,
+    DebugSettings& debug,
     HotkeySettings& hotkeys,
     std::string& error
 ) const {
@@ -60,6 +61,8 @@ bool FormattingSettings::load(
     recognition = {};
     cleanup = {};
     llm = {};
+    debug = {};
+    debug.output_directory = path_.parent_path() / L"debug";
     hotkeys = {};
 
     std::error_code filesystem_error;
@@ -238,6 +241,13 @@ bool FormattingSettings::load(
         path_.c_str()
     ) != 0;
 
+    debug.enabled = GetPrivateProfileIntW(
+        L"debug",
+        L"enabled",
+        0,
+        path_.c_str()
+    ) != 0;
+
     return true;
 }
 
@@ -247,6 +257,7 @@ bool FormattingSettings::save(
     const RecognitionSettings& recognition,
     const CleanupSettings& cleanup,
     const LlmSettings& llm,
+    const DebugSettings& debug,
     const HotkeySettings& hotkeys,
     std::string& error
 ) const {
@@ -383,6 +394,18 @@ bool FormattingSettings::save(
         )) {
         error =
             "Could not save LLM correction settings to: " +
+            WindowsText::to_utf8(path_.wstring());
+        return false;
+    }
+
+    if (!WritePrivateProfileStringW(
+            L"debug",
+            L"enabled",
+            debug.enabled ? L"1" : L"0",
+            path_.c_str()
+        )) {
+        error =
+            "Could not save debug settings to: " +
             WindowsText::to_utf8(path_.wstring());
         return false;
     }
