@@ -25,7 +25,6 @@ enum SettingsTab : std::size_t {
     HotkeysTab,
     DictionaryTab,
     CleanupTab,
-    MarkdownTab,
     SettingsTabCount
 };
 
@@ -33,8 +32,7 @@ constexpr std::array<const wchar_t*, SettingsTabCount> kTabNames = {
     L"General",
     L"Hotkeys",
     L"Custom dictionary",
-    L"Remove words",
-    L"Markdown triggers"
+    L"Remove words"
 };
 
 constexpr COLORREF kSidebarColor = RGB(25, 28, 35);
@@ -166,7 +164,6 @@ bool SettingsWindow::create(
 bool SettingsWindow::show(
     HINSTANCE instance,
     HWND owner,
-    const MarkdownCommands& commands,
     const CustomDictionarySettings& dictionary,
     const RecognitionSettings& recognition,
     const CleanupSettings& cleanup,
@@ -178,7 +175,7 @@ bool SettingsWindow::show(
         return false;
     }
 
-    populate(commands, dictionary, recognition, cleanup, llm, debug, hotkeys);
+    populate(dictionary, recognition, cleanup, llm, debug, hotkeys);
     center_on_owner();
 
     ShowWindow(window_, SW_SHOWNORMAL);
@@ -189,7 +186,6 @@ bool SettingsWindow::show(
 }
 
 void SettingsWindow::populate(
-    const MarkdownCommands& commands,
     const CustomDictionarySettings& dictionary,
     const RecognitionSettings& recognition,
     const CleanupSettings& cleanup,
@@ -197,21 +193,12 @@ void SettingsWindow::populate(
     const DebugSettings& debug,
     const HotkeySettings& hotkeys
 ) {
-    commands_ = commands;
     dictionary_ = dictionary;
     recognition_ = recognition;
     cleanup_ = cleanup;
     llm_ = llm;
     debug_ = debug;
     hotkeys_ = hotkeys;
-
-    for (std::size_t i = 0; i < kMarkdownCommandCount; ++i) {
-        if (edits_[i]) {
-            const std::wstring phrase =
-                WindowsText::from_utf8(commands.phrases[i]);
-            SetWindowTextW(edits_[i], phrase.c_str());
-        }
-    }
 
     std::wstring dictionary_text;
 
@@ -281,41 +268,6 @@ void SettingsWindow::populate(
 }
 
 void SettingsWindow::save_from_controls() {
-    MarkdownCommands candidate;
-
-    for (std::size_t i = 0; i < kMarkdownCommandCount; ++i) {
-        candidate.phrases[i] = WindowsText::to_utf8(control_text(edits_[i]));
-
-        if (candidate.phrases[i].empty()) {
-            MessageBoxW(
-                window_,
-                L"Command phrases cannot be empty.",
-                L"Markdown commands",
-                MB_OK | MB_ICONWARNING
-            );
-
-            SetFocus(edits_[i]);
-            return;
-        }
-
-        for (std::size_t previous = 0; previous < i; ++previous) {
-            if (
-                lowercase(WindowsText::from_utf8(candidate.phrases[i])) ==
-                lowercase(WindowsText::from_utf8(candidate.phrases[previous]))
-            ) {
-                MessageBoxW(
-                    window_,
-                    L"Each command must use a unique phrase.",
-                    L"Markdown commands",
-                    MB_OK | MB_ICONWARNING
-                );
-
-                SetFocus(edits_[i]);
-                return;
-            }
-        }
-    }
-
     CustomDictionarySettings dictionary;
     dictionary.phrases = line_phrases(dictionary_edit_);
 
@@ -445,7 +397,6 @@ void SettingsWindow::save_from_controls() {
         return;
     }
 
-    commands_ = std::move(candidate);
     dictionary_ = std::move(dictionary);
     recognition_ = recognition;
     cleanup_ = std::move(cleanup);
@@ -454,10 +405,6 @@ void SettingsWindow::save_from_controls() {
     hotkeys_ = hotkeys;
     ShowWindow(window_, SW_HIDE);
     PostMessageW(owner_, kSavedMessage, 0, 0);
-}
-
-const MarkdownCommands& SettingsWindow::commands() const {
-    return commands_;
 }
 
 const CustomDictionarySettings& SettingsWindow::dictionary() const {
@@ -697,81 +644,6 @@ LRESULT CALLBACK SettingsWindow::window_proc(
                 L"Remove words",
                 L"One filler word or phrase per line. Applied to formatted dictation."
             );
-            add_page_heading(
-                MarkdownTab,
-                L"Markdown triggers",
-                L"Customize the spoken commands converted into Markdown structure."
-            );
-
-            HWND intro = CreateWindowExW(
-                0,
-                L"STATIC",
-                L"Spoken command",
-                WS_CHILD | WS_VISIBLE,
-                450,
-                126,
-                390,
-                22,
-                window,
-                nullptr,
-                nullptr,
-                nullptr
-            );
-
-            SendMessageW(intro, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
-            settings->add_to_tab(MarkdownTab, intro);
-
-            for (std::size_t i = 0; i < kMarkdownCommandCount; ++i) {
-                const int y = 155 + static_cast<int>(i) * 48;
-                const auto command = static_cast<MarkdownCommand>(i);
-
-                const std::wstring label_text = WindowsText::from_utf8(
-                    markdown_command_label(command)
-                );
-
-                HWND label = CreateWindowExW(
-                    0,
-                    L"STATIC",
-                    label_text.c_str(),
-                    WS_CHILD | WS_VISIBLE | SS_LEFT,
-                    250,
-                    y + 5,
-                    180,
-                    24,
-                    window,
-                    nullptr,
-                    nullptr,
-                    nullptr
-                );
-
-                settings->edits_[i] = CreateWindowExW(
-                    WS_EX_CLIENTEDGE,
-                    L"EDIT",
-                    L"",
-                    WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-                    450,
-                    y,
-                    390,
-                    27,
-                    window,
-                    reinterpret_cast<HMENU>(3000 + i),
-                    nullptr,
-                    nullptr
-                );
-
-                SendMessageW(label, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
-                SendMessageW(
-                    settings->edits_[i],
-                    WM_SETFONT,
-                    reinterpret_cast<WPARAM>(font),
-                    TRUE
-                );
-
-                SendMessageW(settings->edits_[i], EM_SETLIMITTEXT, 200, 0);
-                settings->add_to_tab(MarkdownTab, label);
-                settings->add_to_tab(MarkdownTab, settings->edits_[i]);
-            }
-
             HWND language_label = CreateWindowExW(
                 0,
                 L"STATIC",

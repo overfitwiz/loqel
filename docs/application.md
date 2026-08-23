@@ -57,8 +57,8 @@ The recognition mode is selected in **Settings...**:
 - **Record first, then transcribe** records while F8 is held, displays no live
   transcript, and runs one whole-utterance transcription after F8 is released.
 
-Both modes apply the same custom dictionary, automatic punctuation, Markdown
-commands, target-window validation, and final text insertion rules.
+Both modes apply the same custom dictionary, automatic punctuation,
+target-window validation, and final text insertion rules.
 
 When enabled, local LLM correction runs once on the finalized text after all
 other cleanup and formatting. It does not process partial overlay text. See
@@ -81,46 +81,21 @@ The overlay is:
 - mouse-transparent;
 - positioned above the bottom edge of the current Windows work area.
 
-Partial transcripts replace the displayed text as NeMo emits updates. Spoken
-Markdown commands are applied to each update, so the overlay shows the literal
-Markdown that will be inserted, including line breaks, list markers, heading
-markers, and emphasis markers. The overlay is hidden when a session finishes.
-
-## Markdown commands
-
-The final transcript is passed through a deterministic Markdown formatter before
-insertion. Command matching is case-insensitive. The default phrases are:
-
-| Spoken phrase | Result |
-| --- | --- |
-| `list` | Inserts a new unordered-list `- ` item. Each use inserts another item. |
-| `item` | Inserts a new unordered-list `- ` item. |
-| `bold` | Inserts one `**` marker. Use it again to insert the closing `**`. |
-| `italic` | Inserts one `*` marker. Use it again to insert the closing `*`. |
-| `heading` | Starts a level-one `#` heading. |
-| `subheading` | Starts a level-two `##` heading. |
-| `paragraph` | Inserts a blank line. |
-
-Triggers never add a matching closing marker automatically. Punctuation that
-ASR adds immediately after an opening or structural trigger is treated as
-trigger punctuation and removed.
+Partial transcripts replace the displayed text as NeMo emits updates. The
+overlay is hidden when a session finishes.
 
 ## Formatting settings
 
-Open the tray menu and select `Settings...` to customize every trigger. A
-trigger may be a single word or a phrase, and must be non-empty and unique,
-ignoring case.
-
-The same window contains a custom dictionary for words and phrases that the
+Open the tray menu and select `Settings...` to configure the custom dictionary
+for words and phrases that the
 recognizer commonly misses. Enter one item per line and set its speech-context
 boost from 0 to 5. The default boost is 2; values from 2 to 3 are generally a
 useful starting point. A value of 0 disables dictionary biasing without deleting
 the entries. Excessive boosting can make the recognizer insert a phrase when it
 was not spoken.
 
-Saving applies both command and dictionary changes to the next dictation
-session. An already-running session continues with the settings snapshot it
-started with.
+Saving applies dictionary changes to the next dictation session. An
+already-running session continues with the settings snapshot it started with.
 
 The General page also contains **Correct final text with the local LLM**. It is
 enabled by default. Disabling it unloads the LLM from RAM; enabling it loads and
@@ -135,8 +110,8 @@ directory under:
 ```
 
 Each session directory contains `audio.wav` (mono 16-bit PCM), `transcript.txt`
-(the raw ASR transcript), and `llm-correction.txt` (the final text after cleanup,
-formatting, and optional LLM correction). Debug capture works in both live and
+(the raw ASR transcript), and `llm-correction.txt` (the final text after cleanup
+and optional LLM correction). Debug capture works in both live and
 record-first recognition modes. The app does not automatically delete these
 files.
 

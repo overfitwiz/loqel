@@ -46,7 +46,6 @@ FormattingSettings::FormattingSettings()
 }
 
 bool FormattingSettings::load(
-    MarkdownCommands& commands,
     CustomDictionarySettings& dictionary,
     RecognitionSettings& recognition,
     CleanupSettings& cleanup,
@@ -56,7 +55,6 @@ bool FormattingSettings::load(
     std::string& error
 ) const {
     error.clear();
-    commands = MarkdownCommands::defaults();
     dictionary = {};
     recognition = {};
     cleanup = {};
@@ -69,24 +67,6 @@ bool FormattingSettings::load(
 
     if (!std::filesystem::is_regular_file(path_, filesystem_error)) {
         return true;
-    }
-
-    for (std::size_t i = 0; i < kMarkdownCommandCount; ++i) {
-        const auto command = static_cast<MarkdownCommand>(i);
-        wchar_t value[512] = {};
-
-        GetPrivateProfileStringW(
-            L"markdown_triggers",
-            WindowsText::from_utf8(markdown_command_key(command)).c_str(),
-            WindowsText::from_utf8(commands.phrase(command)).c_str(),
-            value,
-            512,
-            path_.c_str()
-        );
-
-        if (value[0] != L'\0') {
-            commands.phrase(command) = WindowsText::to_utf8(value);
-        }
     }
 
     const UINT phrase_count = std::min<UINT>(
@@ -252,7 +232,6 @@ bool FormattingSettings::load(
 }
 
 bool FormattingSettings::save(
-    const MarkdownCommands& commands,
     const CustomDictionarySettings& dictionary,
     const RecognitionSettings& recognition,
     const CleanupSettings& cleanup,
@@ -276,25 +255,6 @@ bool FormattingSettings::save(
             WindowsText::to_utf8(path_.parent_path().wstring());
 
         return false;
-    }
-
-    for (std::size_t i = 0; i < kMarkdownCommandCount; ++i) {
-        const auto command = static_cast<MarkdownCommand>(i);
-
-        if (
-            !WritePrivateProfileStringW(
-                L"markdown_triggers",
-                WindowsText::from_utf8(markdown_command_key(command)).c_str(),
-                WindowsText::from_utf8(commands.phrase(command)).c_str(),
-                path_.c_str()
-            )
-        ) {
-            error =
-                "Could not save formatting settings to: " +
-                WindowsText::to_utf8(path_.wstring());
-
-            return false;
-        }
     }
 
     if (

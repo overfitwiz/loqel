@@ -12,7 +12,6 @@ Correction is deliberately the last text transformation:
 ```text
 NeMo final transcript
   -> remove configured filler words (formatted mode only)
-  -> expand Markdown voice commands (formatted mode only)
   -> LLM correction (when enabled)
   -> target-window validation
   -> text insertion
@@ -40,8 +39,10 @@ The implementation in `src/LlmPostprocessor.cpp` follows
 `tests/llama/test-llama.cpp`:
 
 1. Tokenize and evaluate the fixed normalization instructions and examples once
-   when the model loads.
-2. Format the compact system instruction and its preservation example with the
+   when the model loads. The cached examples cover URLs, email addresses,
+   currencies, general numbers, decimals, percentages, phone numbers, dates,
+   times, and units.
+2. Format the system instruction and its examples with the
    chat template embedded in the GGUF model. Snapshot sequence 0 after that
    fixed prompt, including its attention KV cache
    and recurrent state.
@@ -60,10 +61,11 @@ correction prompt; only the current dictation and generated answer are evaluated
 each time.
 
 The context size is 2048 tokens and the batch size is 1024. If the context cannot
-hold an approximately full-length response, correction is bypassed. Empty,
-token-truncated, line-losing, or materially shorter/longer generated text is
-also rejected, and the original recognized text is retained. Llama API errors
-still abort insertion and display an error.
+hold an approximately full-length response, correction is bypassed. Empty or
+token-truncated generated text is also rejected, and the original recognized
+text is retained. Completed non-empty output is accepted without a length or
+line-count comparison, allowing compact written forms to replace longer spoken
+forms. Llama API errors still abort insertion and display an error.
 
 ## LLM model discovery
 

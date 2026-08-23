@@ -21,7 +21,7 @@ Generated `build-*` directories are not part of the source architecture.
 
 Owns the dictation state machine, settings snapshots, live/offline recognition
 selection, `AudioQueue`, ASR consumer thread, `AsrEngine`, transcript
-aggregation, Markdown formatting, focus-safety decision, insertion request, and
+aggregation, cleanup, focus-safety decision, insertion request, and
 deterministic session shutdown.
 
 It communicates with the desktop only through `IApplicationPlatform` and with
@@ -48,7 +48,6 @@ the preset-to-RNNT-context mapping shared by the core and platform settings UI.
 
 - `AudioQueue.*` is the bounded producer/consumer channel.
 - `AsrEngine.*` owns NeMo recognizer and stream handles through the public C API.
-- `MarkdownFormatter.*` performs deterministic UTF-8 Markdown command parsing.
 - `LlmPostprocessor.*` owns the resident llama model, cached correction prompt,
   dynamic KV suffix, and deterministic final-text generation.
 
@@ -80,7 +79,6 @@ It does not implement dictation or ASR state transitions.
 
 ## Tests
 
-`MarkdownFormatterTests.cpp` covers command behavior and verifies that ordinary
-UTF-8 text survives formatting. Future platform adapters should add native
-integration tests for audio capture, trigger delivery, focus changes, text
+Future platform adapters should add native integration tests for audio capture,
+trigger delivery, focus changes, text
 insertion, permission denial, and packaging.

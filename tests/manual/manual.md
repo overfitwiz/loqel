@@ -13,19 +13,8 @@
 6. Set boost to `0`, save, and confirm a new session still recognizes normally
    with dictionary biasing disabled.
 
-## Markdown and dictionary together
-
-1. Keep at least one custom dictionary entry enabled.
-2. Dictate: `list` followed by text, then `list` again and more text.
-3. Confirm the overlay and pasted text contain separate `- ` Markdown items.
-4. Change a trigger in Settings, save it, and confirm the new trigger is
-   used on the next session.
-5. Dictate `bold`, some text, then `bold` again. Confirm that each trigger
-   inserts exactly one `**` marker and that a lone `bold` is not auto-closed.
-
 ## Validation
 
-- Duplicate Markdown commands are rejected case-insensitively.
 - Duplicate dictionary entries are rejected case-insensitively.
 - Dictionary boosts outside `0` to `5`, and non-numeric values, are rejected.
 

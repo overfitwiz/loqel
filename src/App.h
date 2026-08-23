@@ -67,7 +67,6 @@ private:
     SettingsWindow settings_window_;
     TextInjector text_injector_;
     FormattingSettings formatting_settings_;
-    MarkdownCommands markdown_commands_ = MarkdownCommands::defaults();
     CustomDictionarySettings custom_dictionary_;
     RecognitionSettings recognition_settings_;
     CleanupSettings cleanup_settings_;

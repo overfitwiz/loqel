@@ -11,7 +11,6 @@
 #include "AudioCapture.h"
 #include "AsrEngine.h"
 #include "AudioQueue.h"
-#include "MarkdownFormatter.h"
 #include "LlmPostprocessor.h"
 
 class ApplicationCore {
@@ -30,7 +29,6 @@ public:
     );
 
     void set_settings(
-        const MarkdownCommands& commands,
         const CustomDictionarySettings& dictionary,
         const RecognitionSettings& recognition,
         const CleanupSettings& cleanup,
@@ -61,8 +59,6 @@ private:
     AsrEngine asr_;
     LlmPostprocessor llm_;
 
-    MarkdownCommands markdown_commands_ = MarkdownCommands::defaults();
-    MarkdownCommands active_markdown_commands_ = MarkdownCommands::defaults();
     CustomDictionarySettings custom_dictionary_;
     CustomDictionarySettings active_custom_dictionary_;
     RecognitionSettings recognition_settings_;

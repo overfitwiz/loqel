@@ -91,7 +91,6 @@ int App::run() {
 
     std::string settings_error;
     if (!formatting_settings_.load(
-            markdown_commands_,
             custom_dictionary_,
             recognition_settings_,
             cleanup_settings_,
@@ -108,7 +107,6 @@ int App::run() {
     }
 
     core_.set_settings(
-        markdown_commands_,
         custom_dictionary_,
         recognition_settings_,
         cleanup_settings_,
@@ -321,7 +319,6 @@ LRESULT CALLBACK App::window_proc(
                 if (!app->settings_window_.show(
                         app->instance_,
                         window,
-                        app->markdown_commands_,
                         app->custom_dictionary_,
                         app->recognition_settings_,
                         app->cleanup_settings_,
@@ -345,7 +342,6 @@ LRESULT CALLBACK App::window_proc(
             return 0;
 
         case SettingsWindow::kSavedMessage: {
-            app->markdown_commands_ = app->settings_window_.commands();
             app->custom_dictionary_ = app->settings_window_.dictionary();
             app->recognition_settings_ = app->settings_window_.recognition();
             app->cleanup_settings_ = app->settings_window_.cleanup();
@@ -354,7 +350,6 @@ LRESULT CALLBACK App::window_proc(
             app->hotkey_settings_ = app->settings_window_.hotkeys();
             app->hotkey_.configure(app->hotkey_settings_);
             app->core_.set_settings(
-                app->markdown_commands_,
                 app->custom_dictionary_,
                 app->recognition_settings_,
                 app->cleanup_settings_,
@@ -364,7 +359,6 @@ LRESULT CALLBACK App::window_proc(
 
             std::string error;
             if (!app->formatting_settings_.save(
-                    app->markdown_commands_,
                     app->custom_dictionary_,
                     app->recognition_settings_,
                     app->cleanup_settings_,

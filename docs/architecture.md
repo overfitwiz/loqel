@@ -13,10 +13,9 @@ Windows entry point and UI
         |
         v
 IApplicationPlatform <---- ApplicationCore ----> IAudioCapture
-                              |     |     |
-                              |     |     +-- MarkdownFormatter
-                              |     +-------- AudioQueue
-                              +-------------- AsrEngine / NeMo C API
+                              |     |
+                              |     +-- AudioQueue
+                              +-------- AsrEngine / NeMo C API
 ```
 
 `ApplicationCore` owns session state, the ASR stream, the per-session queue,
@@ -41,9 +40,6 @@ systems:
 All portable code uses UTF-8 `std::string`. The NeMo C API already emits UTF-8.
 The Windows adapter converts UTF-8 to UTF-16 only at Win32 boundaries through
 `WindowsText`.
-
-Markdown command matching is ASCII case-insensitive. Non-ASCII command text is
-matched byte-for-byte and all non-command UTF-8 text is preserved.
 
 ## Windows adapter
 
@@ -70,8 +66,8 @@ Idle
   -- ASR done ------> validate target -> insert text -> Idle
 ```
 
-At trigger-down, the core snapshots Markdown, custom-dictionary, recognition
-mode, and latency settings and captures an opaque target token. Edits made
+At trigger-down, the core snapshots custom-dictionary, recognition mode, and
+latency settings and captures an opaque target token. Edits made
 during dictation affect only the next session. At completion, text is inserted
 only if the same target is still active.
 
@@ -82,8 +78,8 @@ of allowing unbounded memory use and latency.
 In live mode, the consumer pushes every chunk into a NeMo streaming request and
 publishes partial results. In record-first mode, it continuously drains chunks
 into a recording buffer, then calls `nemo_speech_asr_recognize_f32` after capture
-closes. Both paths send their final UTF-8 transcript through the same
-`MarkdownFormatter` and insertion flow.
+closes. Both paths send their final UTF-8 transcript through the same cleanup
+and insertion flow.
 
 When debug capture is enabled, the consumer also retains the session audio and
 writes a timestamped diagnostics directory containing a PCM WAV, the raw ASR

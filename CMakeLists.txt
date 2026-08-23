@@ -40,18 +40,6 @@ if(LOQEL_BUILD_APP AND NOT LOQEL_BUILD_CORE)
     message(FATAL_ERROR "LOQEL_BUILD_APP requires LOQEL_BUILD_CORE=ON")
 endif()
 
-add_library(
-    loqel_formatter
-    STATIC
-    src/MarkdownFormatter.cpp
-)
-
-target_include_directories(
-    loqel_formatter
-    PUBLIC
-    src
-)
-
 if(LOQEL_BUILD_CORE)
     list(PREPEND CMAKE_PREFIX_PATH "${NEMO_SDK_DIR}" "${LLAMA_SDK_DIR}")
     find_package(NeMoSpeech REQUIRED COMPONENTS ASR)
@@ -63,7 +51,6 @@ if(LOQEL_BUILD_CORE)
         src/core/ApplicationCore.cpp
         src/AudioQueue.cpp
         src/AsrEngine.cpp
-        src/LlmCorrectionPolicy.cpp
         src/LlmPostprocessor.cpp
     )
 
@@ -77,7 +64,6 @@ if(LOQEL_BUILD_CORE)
     target_link_libraries(
         loqel_core
         PUBLIC
-        loqel_formatter
         NeMoSpeech::ASR
         llama
     )
@@ -178,19 +164,6 @@ include(CTest)
 
 if(BUILD_TESTING)
     add_executable(
-        markdown_formatter_tests
-        tests/MarkdownFormatterTests.cpp
-    )
-
-    target_link_libraries(
-        markdown_formatter_tests
-        PRIVATE
-        loqel_formatter
-    )
-
-    add_test(NAME markdown_formatter COMMAND markdown_formatter_tests)
-
-    add_executable(
         application_settings_tests
         tests/ApplicationSettingsTests.cpp
     )
@@ -202,20 +175,6 @@ if(BUILD_TESTING)
     )
 
     add_test(NAME application_settings COMMAND application_settings_tests)
-
-    add_executable(
-        llm_correction_policy_tests
-        tests/LlmCorrectionPolicyTests.cpp
-        src/LlmCorrectionPolicy.cpp
-    )
-
-    target_include_directories(
-        llm_correction_policy_tests
-        PRIVATE
-        src
-    )
-
-    add_test(NAME llm_correction_policy COMMAND llm_correction_policy_tests)
 
     if(LOQEL_BUILD_CORE)
         add_executable(

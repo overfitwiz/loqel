@@ -69,7 +69,6 @@ STEP 14 Error handling + cleanup
 STEP 15 Refinement
         terminology correction
         formatting model
-        ✓ deterministic customizable Markdown commands implemented
         custom dictionary / NeMo speech-context biasing
         ✓ implemented with configurable per-session boost
         correction memory

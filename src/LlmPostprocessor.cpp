@@ -1,7 +1,5 @@
 #include "LlmPostprocessor.h"
 
-#include "LlmCorrectionPolicy.h"
-
 #include "ggml-backend.h"
 #include "llama.h"
 
@@ -15,17 +13,48 @@ namespace {
 
 constexpr int32_t kContextTokens = 2048;
 
-// Kept deliberately compact because this prefix is part of every context. It
-// is formatted with the model's own chat template and cached after loading.
+// This static prefix is formatted with the model's own chat template, evaluated
+// once, and cached after loading. Examples live here rather than in the dynamic
+// user message so they do not add per-dictation prompt evaluation work.
 constexpr const char* kSystemPrompt =
-    "Correct speech-to-text without changing its content. Preserve every "
-    "sentence, clause, uncertain fragment, repetition, negation, and line "
-    "break. Never summarize, merge, omit, explain, or add information. Only "
-    "fix clear transcription, capitalization, punctuation, numbers, and "
-    "spoken forms such as dot, slash, at, dash, underscore, and colon. If a "
-    "change is uncertain, copy that part unchanged. Return only the corrected "
-    "text. Example: 'Open github dot com. Keep this sentence.' becomes 'Open "
-    "github.com. Keep this sentence.'";
+    "You are a speech-to-text normalization engine. Convert clearly spoken "
+    "written forms, including URLs, email addresses, currencies, numbers, "
+    "decimals, percentages, dates, times, phone numbers, units, and symbols. "
+    "In URLs and email addresses, always convert spoken dot, slash, colon, at, "
+    "dash, underscore, and plus to their symbols. Preserve every sentence, "
+    "clause, repetition, negation, uncertain fragment, and line break. A "
+    "normalization may be much shorter or longer than its spoken form. Never "
+    "summarize, omit an idea, explain, or add information. If the intended "
+    "form is uncertain, leave it unchanged. Return only normalized text.\n\n"
+    "Examples:\n"
+    "Input: Go to github dot com. Keep this sentence.\n"
+    "Output: Go to github.com. Keep this sentence.\n\n"
+    "Input: Open github dot com slash pricing. Then leave this sentence unchanged.\n"
+    "Output: Open github.com/pricing. Then leave this sentence unchanged.\n\n"
+    "Input: Visit https colon slash slash docs dot example dot org slash v2.\n"
+    "Output: Visit https://docs.example.org/v2.\n\n"
+    "Input: Email jane dot doe at example dot com.\n"
+    "Output: Email jane.doe@example.com.\n\n"
+    "Input: Write to support dash eu at my underscore company dot co dot uk.\n"
+    "Output: Write to support-eu@my_company.co.uk.\n\n"
+    "Input: It costs twenty five dollars and fifty cents.\n"
+    "Output: It costs $25.50.\n\n"
+    "Input: The refund was one thousand two hundred euros.\n"
+    "Output: The refund was EUR 1,200.\n\n"
+    "Input: Order three hundred and forty two items.\n"
+    "Output: Order 342 items.\n\n"
+    "Input: Use version two point five and set the ratio to one point two five.\n"
+    "Output: Use version 2.5 and set the ratio to 1.25.\n\n"
+    "Input: Growth was twelve point five percent.\n"
+    "Output: Growth was 12.5%.\n\n"
+    "Input: Call plus one four one five five five five zero one two three.\n"
+    "Output: Call +1 415 555 0123.\n\n"
+    "Input: Meet on August nineteenth at three thirty P M.\n"
+    "Output: Meet on August 19th at 3:30 PM.\n\n"
+    "Input: The file is twenty four megabytes and the limit is ten kilograms.\n"
+    "Output: The file is 24 MB and the limit is 10 kg.\n\n"
+    "Input: Keep this first line exactly.\nKeep this second line too.\n"
+    "Output: Keep this first line exactly.\nKeep this second line too.";
 
 constexpr const char* kUserInstruction =
     "Correct this transcript. Preserve all content and return only corrected text:\n";
@@ -506,13 +535,11 @@ bool LlmPostprocessor::process(
     }
 
     corrected = trim(std::move(corrected));
-    if (
-        !completed ||
-        !llm_correction_length_is_safe(text, corrected)
-    ) {
-        // A missing end token indicates token/context truncation. Empty or
-        // materially different output is also unsafe. In every case retain
-        // the original transcript and treat optional correction as bypassed.
+    if (!completed || corrected.empty()) {
+        // A missing end token indicates token/context truncation. An empty
+        // answer is unusable. In either case retain the original transcript
+        // and treat optional correction as bypassed. Completed non-empty
+        // answers are accepted without comparing their length to the input.
         return true;
     }
 

@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 
-#include "MarkdownFormatter.h"
 #include "core/ApplicationSettings.h"
 
 class FormattingSettings {
@@ -12,7 +11,6 @@ public:
     FormattingSettings();
 
     bool load(
-        MarkdownCommands& commands,
         CustomDictionarySettings& dictionary,
         RecognitionSettings& recognition,
         CleanupSettings& cleanup,
@@ -23,7 +21,6 @@ public:
     ) const;
 
     bool save(
-        const MarkdownCommands& commands,
         const CustomDictionarySettings& dictionary,
         const RecognitionSettings& recognition,
         const CleanupSettings& cleanup,

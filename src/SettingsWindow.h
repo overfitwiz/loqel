@@ -16,7 +16,6 @@ public:
     bool show(
         HINSTANCE instance,
         HWND owner,
-        const MarkdownCommands& commands,
         const CustomDictionarySettings& dictionary,
         const RecognitionSettings& recognition,
         const CleanupSettings& cleanup,
@@ -25,7 +24,6 @@ public:
         const HotkeySettings& hotkeys
     );
 
-    const MarkdownCommands& commands() const;
     const CustomDictionarySettings& dictionary() const;
     const RecognitionSettings& recognition() const;
     const CleanupSettings& cleanup() const;
@@ -37,7 +35,6 @@ public:
 private:
     bool create(HINSTANCE instance, HWND owner);
     void populate(
-        const MarkdownCommands& commands,
         const CustomDictionarySettings& dictionary,
         const RecognitionSettings& recognition,
         const CleanupSettings& cleanup,
@@ -60,7 +57,6 @@ private:
     HWND window_ = nullptr;
     HWND owner_ = nullptr;
 
-    std::array<HWND, kMarkdownCommandCount> edits_ = {};
     HWND dictionary_edit_ = nullptr;
     HWND boost_edit_ = nullptr;
     HWND mode_combo_ = nullptr;
@@ -74,14 +70,13 @@ private:
     HWND model_combo_ = nullptr;
     HWND brand_label_ = nullptr;
 
-    std::array<HWND, 5> navigation_buttons_ = {};
-    std::array<std::vector<HWND>, 5> tab_controls_;
+    std::array<HWND, 4> navigation_buttons_ = {};
+    std::array<std::vector<HWND>, 4> tab_controls_;
     std::size_t active_tab_ = 0;
     HFONT ui_font_ = nullptr;
     HFONT heading_font_ = nullptr;
     HFONT brand_font_ = nullptr;
 
-    MarkdownCommands commands_ = MarkdownCommands::defaults();
     CustomDictionarySettings dictionary_;
     RecognitionSettings recognition_;
     CleanupSettings cleanup_;

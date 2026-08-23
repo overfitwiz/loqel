@@ -7,9 +7,9 @@ and release F8 to finalize recognition and insert the text into the application
 that was active when dictation began.
 
 The application runs locally and uses the NeMo Speech C API with a GGUF
-streaming ASR model. The dictation controller, queue, recognizer wrapper, and
-Markdown formatter are platform-neutral; Win32 and WASAPI provide the current
-desktop and microphone adapters. There is no web or service layer.
+streaming ASR model. The dictation controller, queue, and recognizer wrapper
+are platform-neutral; Win32 and WASAPI provide the current desktop and
+microphone adapters. There is no web or service layer.
 
 ## Build status
 

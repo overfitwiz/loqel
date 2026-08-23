@@ -159,17 +159,13 @@ std::string remove_cleanup_words(
 std::string prepare_output(
     const std::string& transcript,
     OutputMode output_mode,
-    const CleanupSettings& cleanup,
-    const MarkdownCommands& commands
+    const CleanupSettings& cleanup
 ) {
     if (output_mode == OutputMode::Plain) {
         return transcript;
     }
 
-    return MarkdownFormatter::format(
-        remove_cleanup_words(transcript, cleanup),
-        commands
-    );
+    return remove_cleanup_words(transcript, cleanup);
 }
 
 void preserve_first_error(std::string& destination, std::string error) {
@@ -373,14 +369,12 @@ bool ApplicationCore::initialize(
 }
 
 void ApplicationCore::set_settings(
-    const MarkdownCommands& commands,
     const CustomDictionarySettings& dictionary,
     const RecognitionSettings& recognition,
     const CleanupSettings& cleanup,
     const LlmSettings& llm,
     const DebugSettings& debug
 ) {
-    markdown_commands_ = commands;
     custom_dictionary_ = dictionary;
     recognition_settings_ = recognition;
     cleanup_settings_ = cleanup;
@@ -466,7 +460,6 @@ void ApplicationCore::start_session(OutputMode output_mode) {
     }
 
     target_ = platform_.capture_active_target();
-    active_markdown_commands_ = markdown_commands_;
     active_custom_dictionary_ = custom_dictionary_;
     active_recognition_settings_ = recognition_settings_;
     active_cleanup_settings_ = cleanup_settings_;
@@ -620,8 +613,7 @@ void ApplicationCore::consume_audio() {
             result.text = prepare_output(
                 transcript,
                 active_output_mode_,
-                active_cleanup_settings_,
-                active_markdown_commands_
+                active_cleanup_settings_
             );
 
             if (
@@ -684,8 +676,7 @@ void ApplicationCore::consume_audio() {
         display = prepare_output(
             display,
             active_output_mode_,
-            active_cleanup_settings_,
-            active_markdown_commands_
+            active_cleanup_settings_
         );
 
         platform_.post_to_main(
@@ -795,8 +786,7 @@ void ApplicationCore::consume_audio() {
     result.text = prepare_output(
         committed,
         active_output_mode_,
-        active_cleanup_settings_,
-        active_markdown_commands_
+        active_cleanup_settings_
     );
 
     if (

@@ -1,4 +1,3 @@
-#include "LlmCorrectionPolicy.h"
 #include "LlmPostprocessor.h"
 
 #include <filesystem>
@@ -19,6 +18,7 @@ void expect(bool condition, const char* message) {
 std::string correct_and_check(
     LlmPostprocessor& processor,
     const std::string& original,
+    const std::string& expected,
     const char* message
 ) {
     std::string corrected;
@@ -32,10 +32,7 @@ std::string correct_and_check(
     }
 
     std::cout << corrected << '\n';
-    expect(
-        llm_correction_length_is_safe(original, corrected),
-        message
-    );
+    expect(corrected.find(expected) != std::string::npos, message);
     return corrected;
 }
 
@@ -58,22 +55,23 @@ int main() {
 
     correct_and_check(
         processor,
-        "Open github dot com. Then leave this sentence unchanged.",
-        "a clear spoken-form result must remain safe"
+        "Open github dot com slash pricing. Then leave this sentence unchanged.",
+        "github.com",
+        "a URL domain must be normalized"
     );
 
     correct_and_check(
         processor,
-        "It works with both live and record first modes and persists in "
-        "settings dot Ne. The BUP mode is disabled by default.",
-        "the reported transcript must not be destructively shortened"
+        "Email jane dot doe at example dot com.",
+        "jane.doe@example.com",
+        "an email address must be normalized"
     );
     correct_and_check(
         processor,
-        "Keep this first line exactly.\nKeep this second line too.",
-        "a multiline transcript must retain every line"
+        "The total is twenty five dollars and fifty cents.",
+        "$25.50",
+        "a currency amount must be normalized"
     );
-
     processor.shutdown();
     return failures == 0 ? 0 : 1;
 }
